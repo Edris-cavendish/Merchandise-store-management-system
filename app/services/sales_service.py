@@ -6,7 +6,7 @@ from typing import Any
 from app.config import DEFAULT_VAT_RATE, STORE_NAME
 from app.db.database import DatabaseManager
 from app.utils.currency import DEFAULT_CURRENCY_SYMBOL, DEFAULT_USE_DECIMALS
-from app.utils.receipts import build_receipt_text, export_receipt_pdf, export_receipt_text
+from app.utils.receipts import build_receipt_text, export_receipt_pdf
 
 
 class SalesService:
@@ -138,10 +138,9 @@ class SalesService:
         }
 
     def save_receipt(self, receipt_payload: dict, output_path: str) -> None:
-        if output_path.lower().endswith(".pdf"):
-            export_receipt_pdf(receipt_payload, output_path)
-        else:
-            export_receipt_text(receipt_payload, output_path)
+        if not output_path.lower().endswith(".pdf"):
+            raise ValueError("Only PDF export is allowed for receipts.")
+        export_receipt_pdf(receipt_payload, output_path)
 
     def receipt_preview(self, receipt_payload: dict) -> str:
         return build_receipt_text(receipt_payload)

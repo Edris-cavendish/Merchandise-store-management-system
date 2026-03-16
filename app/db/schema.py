@@ -29,7 +29,7 @@ SCHEMA_SQL = dedent(
         full_name TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'Administrator',
         is_active INTEGER NOT NULL DEFAULT 1,
-        theme_name TEXT NOT NULL DEFAULT 'Yellow & White',
+        theme_name TEXT NOT NULL DEFAULT 'Dark Slate & Amber',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE SET NULL
     );
@@ -119,7 +119,7 @@ SCHEMA_SQL = dedent(
         quantity INTEGER NOT NULL,
         unit_cost REAL NOT NULL,
         total_cost REAL NOT NULL,
-        payment_type TEXT NOT NULL CHECK(payment_type IN ('cash', 'credit')),
+        payment_type TEXT NOT NULL CHECK(payment_type IN ('cash', 'mobile money', 'bank')),
         amount_paid REAL NOT NULL DEFAULT 0,
         notes TEXT,
         created_by INTEGER,
@@ -150,6 +150,10 @@ SCHEMA_SQL = dedent(
         created_by INTEGER,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS measurement_units (
+        name TEXT PRIMARY KEY
     );
     """
 )

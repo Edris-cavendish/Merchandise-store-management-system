@@ -20,7 +20,7 @@ class ReceiptsTab(ScrollablePage):
         title: str = "Receipt Archive",
         description: str | None = None,
     ) -> None:
-        super().__init__(parent, padding=6)
+        super().__init__(parent, padding=14)
         self.sales_service = sales_service
         self.settings_service = settings_service
         self.current_user = current_user
@@ -43,7 +43,7 @@ class ReceiptsTab(ScrollablePage):
         ttk.Label(
             self.body,
             text=description,
-            style="Muted.TLabel",
+            style="MutedBg.TLabel",
             wraplength=980,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(0, 12))
@@ -121,7 +121,7 @@ class ReceiptsTab(ScrollablePage):
             self.preview_panel,
             height=22,
             relief="flat",
-            font=("Consolas", 10),
+            font=("Consolas", 11),
             wrap="none",
         )
         self.preview.grid(row=2, column=0, sticky="nsew")
@@ -163,6 +163,8 @@ class ReceiptsTab(ScrollablePage):
             highlightthickness=0,
             borderwidth=0,
         )
+        from app.ui.widgets import apply_treeview_stripes
+        apply_treeview_stripes(self.tree, palette)
 
     def _cashier_scope(self) -> int | None:
         return int(self.current_user["id"]) if self.scope == "mine" else None
@@ -193,7 +195,7 @@ class ReceiptsTab(ScrollablePage):
             title="Export Stored Receipt",
             defaultextension=".pdf",
             initialfile=default_name,
-            filetypes=[("PDF File", "*.pdf"), ("Text File", "*.txt")],
+            filetypes=[("PDF File", "*.pdf")],
         )
         if not file_path:
             return
@@ -212,12 +214,13 @@ class ReceiptsTab(ScrollablePage):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        for receipt in receipts:
+        for index, receipt in enumerate(receipts):
             total = format_money(
                 receipt["total_amount"],
                 receipt.get("currency_symbol"),
                 bool(receipt.get("use_decimals", 1)),
             )
+            tag = "even" if index % 2 == 0 else "odd"
             item_id = self.tree.insert(
                 "",
                 "end",
@@ -230,6 +233,7 @@ class ReceiptsTab(ScrollablePage):
                     total,
                     receipt.get("store_name") or "Store",
                 ),
+                tags=(tag,),
             )
             if self.selected_sale_id is not None and int(receipt["id"]) == int(self.selected_sale_id):
                 selected_item = item_id

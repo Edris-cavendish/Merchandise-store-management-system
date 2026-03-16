@@ -3,66 +3,82 @@ from __future__ import annotations
 from tkinter import ttk
 
 
-THEMES = {
-    "Green & White": {
-        "bg": "#F3FAF5",
-        "surface": "#FFFFFF",
-        "surface_alt": "#E6F3EA",
-        "card": "#D8ECDC",
-        "accent": "#2F7D4A",
-        "accent_dark": "#225C36",
-        "success": "#2F7D4A",
-        "danger": "#C25A49",
-        "text": "#14261A",
-        "muted": "#587160",
-        "entry": "#FFFFFF",
-        "outline": "#C7DECE",
+# ---------------------------------------------------------------------------
+# Palettes
+# ---------------------------------------------------------------------------
+
+THEMES: dict[str, dict[str, str]] = {
+    # ── Dark Slate & Amber — premium dark-mode default ──────────────────────
+    "Dark Slate & Amber": {
+        "bg":          "#0F172A",
+        "surface":     "#1E293B",
+        "surface_alt": "#263348",
+        "card":        "#1E293B",
+        "accent":      "#F59E0B",
+        "accent_dark": "#D97706",
+        "success":     "#10B981",
+        "danger":      "#EF4444",
+        "text":        "#F1F5F9",
+        "muted":       "#94A3B8",
+        "entry":       "#1E293B",
+        "outline":     "#334155",
+        "card_border": "#334155",
+        "hero_text":   "#FFFFFF",
     },
-    "Dark Blue & White": {
-        "bg": "#F3F7FB",
-        "surface": "#FFFFFF",
-        "surface_alt": "#E4EDF8",
-        "card": "#D8E4F2",
-        "accent": "#1F4E8C",
-        "accent_dark": "#173963",
-        "success": "#2D845C",
-        "danger": "#C95E4C",
-        "text": "#132233",
-        "muted": "#5B7187",
-        "entry": "#FFFFFF",
-        "outline": "#C8D8EA",
+    # ── Forest & Cream — clean professional light ────────────────────────────
+    "Forest & Cream": {
+        "bg":          "#F4F9F6",
+        "surface":     "#FFFFFF",
+        "surface_alt": "#E3F0E9",
+        "card":        "#EAF4EE",
+        "accent":      "#166534",
+        "accent_dark": "#14532D",
+        "success":     "#16A34A",
+        "danger":      "#DC2626",
+        "text":        "#0F2318",
+        "muted":       "#4D7A5E",
+        "entry":       "#FFFFFF",
+        "outline":     "#BBD9C8",
+        "card_border": "#C2DCC9",
+        "hero_text":   "#FFFFFF",
     },
-    "Yellow & White": {
-        "bg": "#FFF9EE",
-        "surface": "#FFFFFF",
-        "surface_alt": "#FFF1CD",
-        "card": "#F7E5A9",
-        "accent": "#C69214",
-        "accent_dark": "#916C0F",
-        "success": "#4F8A48",
-        "danger": "#C8694D",
-        "text": "#33220A",
-        "muted": "#7C673F",
-        "entry": "#FFFFFF",
-        "outline": "#E8D6A0",
+    # ── Ocean & Cobalt — corporate clarity ──────────────────────────────────
+    "Ocean & Cobalt": {
+        "bg":          "#F0F6FF",
+        "surface":     "#FFFFFF",
+        "surface_alt": "#DBEAFE",
+        "card":        "#E0ECFF",
+        "accent":      "#1D4ED8",
+        "accent_dark": "#1E40AF",
+        "success":     "#059669",
+        "danger":      "#DC2626",
+        "text":        "#0F1E3D",
+        "muted":       "#4B6890",
+        "entry":       "#FFFFFF",
+        "outline":     "#BFCFE8",
+        "card_border": "#C4D4EC",
+        "hero_text":   "#FFFFFF",
     },
-    "Brown & White": {
-        "bg": "#FBF6F2",
-        "surface": "#FFFFFF",
-        "surface_alt": "#F2E6DC",
-        "card": "#E7D6C5",
-        "accent": "#7A4E2B",
-        "accent_dark": "#58381E",
-        "success": "#4D8150",
-        "danger": "#C66A55",
-        "text": "#2B1D14",
-        "muted": "#6F5A49",
-        "entry": "#FFFFFF",
-        "outline": "#DCC5B1",
+    # ── Warm Sand & Terracotta — brand warmth ───────────────────────────────
+    "Warm Sand": {
+        "bg":          "#FEFBF3",
+        "surface":     "#FFFFFF",
+        "surface_alt": "#FEF3CD",
+        "card":        "#FDE9B1",
+        "accent":      "#B45309",
+        "accent_dark": "#92400E",
+        "success":     "#16A34A",
+        "danger":      "#C0392B",
+        "text":        "#3B1D07",
+        "muted":       "#7A5C3A",
+        "entry":       "#FFFFFF",
+        "outline":     "#E8D4A0",
+        "card_border": "#E1CB90",
+        "hero_text":   "#FFFFFF",
     },
 }
 
-DEFAULT_THEME_NAME = "Yellow & White"
+DEFAULT_THEME_NAME = "Dark Slate & Amber"
 THEME_OPTIONS = tuple(THEMES.keys())
 PALETTE = THEMES[DEFAULT_THEME_NAME]
 
@@ -75,213 +91,350 @@ def get_palette(theme_name: str | None = None) -> dict[str, str]:
     return THEMES[normalize_theme_name(theme_name)]
 
 
-def apply_theme(style: ttk.Style, theme_name: str | None = None) -> dict[str, str]:
-    palette = get_palette(theme_name)
+def apply_theme(style: ttk.Style, theme_name: str | None = None) -> dict[str, str]:  # noqa: C901
+    p = get_palette(theme_name)
     style.theme_use("clam")
-    style.configure(".", background=palette["bg"], foreground=palette["text"], font=("Segoe UI", 10))
+
+    # ── Global base ─────────────────────────────────────────────────────────
+    style.configure(
+        ".",
+        background=p["bg"],
+        foreground=p["text"],
+        font=("Segoe UI", 10),
+        borderwidth=0,
+        focusthickness=0,
+    )
+
+    # ── Entry / Combobox ─────────────────────────────────────────────────────
     style.configure(
         "TEntry",
-        fieldbackground=palette["entry"],
-        foreground=palette["text"],
-        insertcolor=palette["text"],
+        fieldbackground=p["entry"],
+        foreground=p["text"],
+        insertcolor=p["text"],
         borderwidth=1,
         relief="solid",
-        padding=9,
+        padding=(10, 8),
     )
     style.map(
         "TEntry",
-        fieldbackground=[("disabled", "#E2E5E9"), ("readonly", palette["entry"])],
-        foreground=[("disabled", "#74818D"), ("readonly", palette["text"])],
+        fieldbackground=[("disabled", p["surface_alt"]), ("readonly", p["entry"])],
+        foreground=[("disabled", p["muted"]), ("readonly", p["text"])],
+        bordercolor=[("focus", p["accent"]), ("!focus", p["outline"])],
     )
     style.configure(
         "TCombobox",
-        fieldbackground=palette["entry"],
-        background=palette["entry"],
-        foreground=palette["text"],
-        arrowcolor=palette["text"],
-        insertcolor=palette["text"],
+        fieldbackground=p["entry"],
+        background=p["entry"],
+        foreground=p["text"],
+        arrowcolor=p["accent"],
+        insertcolor=p["text"],
         borderwidth=1,
         relief="solid",
-        padding=7,
+        padding=(10, 8),
     )
     style.map(
         "TCombobox",
-        fieldbackground=[("readonly", palette["entry"])],
-        background=[("readonly", palette["entry"])],
-        foreground=[("readonly", palette["text"])],
-        arrowcolor=[("readonly", palette["text"])],
+        fieldbackground=[("readonly", p["entry"])],
+        background=[("readonly", p["entry"])],
+        foreground=[("readonly", p["text"])],
+        arrowcolor=[("readonly", p["accent"])],
+        bordercolor=[("focus", p["accent"]), ("!focus", p["outline"])],
     )
-    style.configure("TCheckbutton", background=palette["surface"], foreground=palette["text"], font=("Segoe UI", 10))
+
+    # ── Checkbutton ──────────────────────────────────────────────────────────
+    style.configure(
+        "TCheckbutton",
+        background=p["surface"],
+        foreground=p["text"],
+        font=("Segoe UI", 10),
+        indicatorcolor=p["entry"],
+        indicatorrelief="flat",
+    )
     style.map(
         "TCheckbutton",
-        background=[("active", palette["surface"])],
-        foreground=[("disabled", palette["muted"])],
+        background=[("active", p["surface"])],
+        foreground=[("disabled", p["muted"])],
+        indicatorcolor=[("selected", p["accent"]), ("!selected", p["entry"])],
     )
-    style.configure("TScrollbar", background=palette["surface_alt"], troughcolor=palette["bg"], arrowcolor=palette["accent"])
-    style.configure("App.TFrame", background=palette["bg"])
-    style.configure("Header.TFrame", background=palette["bg"])
-    style.configure("Surface.TFrame", background=palette["surface"])
-    style.configure("SurfaceAlt.TFrame", background=palette["surface_alt"])
-    style.configure("Card.TFrame", background=palette["card"], relief="flat")
-    style.configure("HeroCard.TFrame", background=palette["accent"], relief="flat")
+
+    # ── Scrollbar ────────────────────────────────────────────────────────────
+    style.configure(
+        "TScrollbar",
+        background=p["surface_alt"],
+        troughcolor=p["bg"],
+        arrowcolor=p["accent"],
+        borderwidth=0,
+        relief="flat",
+    )
+
+    # ── Frame styles ─────────────────────────────────────────────────────────
+    style.configure("App.TFrame",      background=p["bg"])
+    style.configure("Header.TFrame",   background=p["bg"])
+    style.configure("Surface.TFrame",  background=p["surface"])
+    style.configure("SurfaceAlt.TFrame", background=p["surface_alt"])
+    style.configure("Card.TFrame",     background=p["card"], relief="flat")
+    style.configure("HeroCard.TFrame", background=p["accent"], relief="flat")
+    style.configure("Outline.TFrame",  background=p["surface"], relief="flat")
+
+    # ── Label styles ─────────────────────────────────────────────────────────
     style.configure(
         "Hero.TLabel",
-        background=palette["surface"],
-        foreground=palette["text"],
-        font=("Bahnschrift SemiBold", 19),
+        background=p["surface"],
+        foreground=p["text"],
+        font=("Bahnschrift SemiBold", 20),
     )
     style.configure(
         "Headline.TLabel",
-        background=palette["bg"],
-        foreground=palette["text"],
-        font=("Bahnschrift SemiBold", 21),
-    )
-    style.configure(
-        "Section.TLabel",
-        background=palette["surface"],
-        foreground=palette["text"],
-        font=("Bahnschrift SemiBold", 12),
-    )
-    style.configure(
-        "Kicker.TLabel",
-        background=palette["card"],
-        foreground=palette["accent_dark"],
-        font=("Segoe UI Semibold", 9),
-    )
-    style.configure(
-        "CardTitle.TLabel",
-        background=palette["card"],
-        foreground=palette["text"],
-        font=("Segoe UI Semibold", 11),
-    )
-    style.configure(
-        "CardValue.TLabel",
-        background=palette["card"],
-        foreground=palette["text"],
+        background=p["bg"],
+        foreground=p["text"],
         font=("Bahnschrift SemiBold", 22),
     )
     style.configure(
+        "Section.TLabel",
+        background=p["surface"],
+        foreground=p["text"],
+        font=("Bahnschrift SemiBold", 13),
+    )
+    style.configure(
+        "Kicker.TLabel",
+        background=p["card"],
+        foreground=p["accent"],
+        font=("Segoe UI Semibold", 8),
+    )
+    style.configure(
+        "CardTitle.TLabel",
+        background=p["card"],
+        foreground=p["muted"],
+        font=("Segoe UI Semibold", 10),
+    )
+    style.configure(
+        "CardValue.TLabel",
+        background=p["card"],
+        foreground=p["text"],
+        font=("Bahnschrift SemiBold", 26),
+    )
+    style.configure(
         "Muted.TLabel",
-        background=palette["surface"],
-        foreground=palette["muted"],
+        background=p["surface"],
+        foreground=p["muted"],
+        font=("Segoe UI", 10),
+    )
+    style.configure(
+        "MutedBg.TLabel",
+        background=p["bg"],
+        foreground=p["muted"],
         font=("Segoe UI", 10),
     )
     style.configure(
         "Footer.TLabel",
-        background=palette["bg"],
-        foreground=palette["muted"],
+        background=p["bg"],
+        foreground=p["muted"],
         font=("Segoe UI", 9),
     )
     style.configure(
         "FormLabel.TLabel",
-        background=palette["surface"],
-        foreground=palette["muted"],
-        font=("Segoe UI Semibold", 10),
+        background=p["surface"],
+        foreground=p["muted"],
+        font=("Segoe UI Semibold", 9),
     )
     style.configure(
-        "Primary.TButton",
-        background=palette["accent"],
-        foreground="#FFFFFF",
-        borderwidth=0,
-        focusthickness=0,
-        font=("Segoe UI Semibold", 10),
-        padding=(16, 11),
-    )
-    style.map(
-        "Primary.TButton",
-        background=[("active", palette["accent_dark"])],
-        foreground=[("disabled", "#8A949C")],
-    )
-    style.configure(
-        "Secondary.TButton",
-        background=palette["surface_alt"],
-        foreground=palette["text"],
-        borderwidth=0,
-        focusthickness=0,
-        font=("Segoe UI Semibold", 10),
-        padding=(16, 11),
-    )
-    style.map("Secondary.TButton", background=[("active", palette["card"])])
-    style.configure(
-        "Treeview",
-        background=palette["entry"],
-        foreground=palette["text"],
-        fieldbackground=palette["entry"],
-        rowheight=30,
-        borderwidth=0,
-        font=("Segoe UI", 10),
-    )
-    style.map("Treeview", background=[("selected", palette["surface_alt"])], foreground=[("selected", palette["text"])])
-    style.configure(
-        "Treeview.Heading",
-        background=palette["surface_alt"],
-        foreground=palette["text"],
-        font=("Segoe UI Semibold", 10),
-        relief="flat",
-        padding=(8, 9),
-    )
-    style.map("Treeview.Heading", background=[("active", palette["card"])])
-    style.configure("TNotebook", background=palette["bg"], borderwidth=0, tabmargins=(0, 10, 0, 0))
-    style.configure(
-        "TNotebook.Tab",
-        background=palette["surface"],
-        foreground=palette["muted"],
-        padding=(18, 11),
-        font=("Segoe UI Semibold", 10),
-    )
-    style.map(
-        "TNotebook.Tab",
-        background=[("selected", palette["accent"]), ("active", palette["surface_alt"])],
-        foreground=[("selected", "#FFFFFF"), ("active", palette["text"])],
-    )
-    style.configure("TLabelframe", background=palette["surface"], foreground=palette["text"], borderwidth=0)
-    style.configure(
-        "TLabelframe.Label",
-        background=palette["surface"],
-        foreground=palette["accent"],
-        font=("Segoe UI Semibold", 10),
+        "FormLabelBg.TLabel",
+        background=p["bg"],
+        foreground=p["muted"],
+        font=("Segoe UI Semibold", 9),
     )
 
+    # ── Accent-on-dark labels (used in hero card) ────────────────────────────
     style.configure(
         "HeroAccent.TLabel",
-        background=palette["accent"],
-        foreground="#FFFFFF",
-        font=("Bahnschrift SemiBold", 22),
+        background=p["accent"],
+        foreground=p["hero_text"],
+        font=("Bahnschrift SemiBold", 24),
     )
     style.configure(
         "HeroSub.TLabel",
-        background=palette["accent"],
-        foreground="#F7FBFF",
+        background=p["accent"],
+        foreground=p["hero_text"],
         font=("Segoe UI", 10),
     )
     style.configure(
         "HeroPill.TLabel",
-        background=palette["accent_dark"],
-        foreground="#FFFFFF",
+        background=p["accent_dark"],
+        foreground=p["hero_text"],
         font=("Segoe UI Semibold", 9),
+        padding=(8, 3),
     )
     style.configure(
         "HeaderMetaTitle.TLabel",
-        background=palette["surface"],
-        foreground=palette["text"],
-        font=("Segoe UI Semibold", 10),
+        background=p["surface"],
+        foreground=p["text"],
+        font=("Segoe UI Semibold", 11),
     )
     style.configure(
         "HeaderMetaText.TLabel",
-        background=palette["surface"],
-        foreground=palette["muted"],
+        background=p["surface"],
+        foreground=p["muted"],
         font=("Segoe UI", 10),
     )
     style.configure(
         "LoginTitle.TLabel",
-        background=palette["surface"],
-        foreground=palette["text"],
-        font=("Bahnschrift SemiBold", 18),
+        background=p["surface"],
+        foreground=p["text"],
+        font=("Bahnschrift SemiBold", 22),
     )
     style.configure(
         "LoginBody.TLabel",
-        background=palette["surface"],
-        foreground=palette["muted"],
+        background=p["surface"],
+        foreground=p["muted"],
         font=("Segoe UI", 10),
     )
-    return palette
+    # Accent-coloured value for payroll highlight
+    style.configure(
+        "AccentValue.TLabel",
+        background=p["card"],
+        foreground=p["accent"],
+        font=("Bahnschrift SemiBold", 15),
+    )
+    # Badge / pill label for status indicators
+    style.configure(
+        "BadgeActive.TLabel",
+        background=p["success"],
+        foreground="#FFFFFF",
+        font=("Segoe UI Semibold", 8),
+        padding=(6, 2),
+    )
+    style.configure(
+        "BadgeInactive.TLabel",
+        background=p["danger"],
+        foreground="#FFFFFF",
+        font=("Segoe UI Semibold", 8),
+        padding=(6, 2),
+    )
+    # User avatar / initials pill
+    style.configure(
+        "AvatarPill.TLabel",
+        background=p["accent"],
+        foreground=p["hero_text"],
+        font=("Bahnschrift SemiBold", 14),
+        anchor="center",
+        padding=(10, 6),
+    )
+
+    # ── Buttons ──────────────────────────────────────────────────────────────
+    style.configure(
+        "Primary.TButton",
+        background=p["accent"],
+        foreground=p["hero_text"],
+        borderwidth=0,
+        focusthickness=0,
+        font=("Segoe UI Semibold", 10),
+        padding=(18, 12),
+    )
+    style.map(
+        "Primary.TButton",
+        background=[("active", p["accent_dark"]), ("disabled", p["outline"])],
+        foreground=[("disabled", p["muted"])],
+    )
+    style.configure(
+        "Secondary.TButton",
+        background=p["surface_alt"],
+        foreground=p["text"],
+        borderwidth=0,
+        focusthickness=0,
+        font=("Segoe UI Semibold", 10),
+        padding=(18, 12),
+    )
+    style.map(
+        "Secondary.TButton",
+        background=[("active", p["card"]), ("disabled", p["surface_alt"])],
+        foreground=[("disabled", p["muted"])],
+    )
+    # Danger button — used for Logout and destructive actions
+    style.configure(
+        "Danger.TButton",
+        background=p["danger"],
+        foreground="#FFFFFF",
+        borderwidth=0,
+        focusthickness=0,
+        font=("Segoe UI Semibold", 10),
+        padding=(18, 12),
+    )
+    style.map(
+        "Danger.TButton",
+        background=[("active", "#C0392B"), ("disabled", p["outline"])],
+        foreground=[("disabled", p["muted"])],
+    )
+
+    # ── Treeview ─────────────────────────────────────────────────────────────
+    style.configure(
+        "Treeview",
+        background=p["entry"],
+        foreground=p["text"],
+        fieldbackground=p["entry"],
+        rowheight=36,
+        borderwidth=0,
+        font=("Segoe UI", 10),
+    )
+    style.map(
+        "Treeview",
+        background=[("selected", p["accent"])],
+        foreground=[("selected", p["hero_text"])],
+    )
+    style.configure(
+        "Treeview.Heading",
+        background=p["surface_alt"],
+        foreground=p["text"],
+        font=("Segoe UI Semibold", 10),
+        relief="flat",
+        padding=(10, 10),
+    )
+    style.map(
+        "Treeview.Heading",
+        background=[("active", p["card"])],
+    )
+
+    # ── Notebook ─────────────────────────────────────────────────────────────
+    style.configure(
+        "TNotebook",
+        background=p["bg"],
+        borderwidth=0,
+        tabmargins=(0, 8, 0, 0),
+    )
+    style.configure(
+        "TNotebook.Tab",
+        background=p["surface"],
+        foreground=p["muted"],
+        padding=(22, 12),
+        font=("Segoe UI Semibold", 10),
+    )
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", p["accent"]), ("active", p["surface_alt"])],
+        foreground=[("selected", p["hero_text"]), ("active", p["text"])],
+    )
+
+    # ── LabelFrame ───────────────────────────────────────────────────────────
+    style.configure(
+        "TLabelframe",
+        background=p["surface"],
+        foreground=p["text"],
+        borderwidth=1,
+        relief="solid",
+        bordercolor=p["outline"],
+        padding=(14, 10),
+    )
+    style.configure(
+        "TLabelframe.Label",
+        background=p["surface"],
+        foreground=p["accent"],
+        font=("Segoe UI Semibold", 10),
+        padding=(4, 0),
+    )
+
+    # ── Separator ────────────────────────────────────────────────────────────
+    style.configure(
+        "TSeparator",
+        background=p["outline"],
+    )
+
+    return p

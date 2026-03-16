@@ -8,7 +8,7 @@ from app.ui.widgets import ScrollablePage, make_labeled_entry
 
 class PayrollTab(ScrollablePage):
     def __init__(self, parent, current_user: dict, payroll_service, settings_service) -> None:
-        super().__init__(parent, padding=6)
+        super().__init__(parent, padding=14)
         self.current_user = current_user
         self.payroll_service = payroll_service
         self.settings_service = settings_service
@@ -27,15 +27,22 @@ class PayrollTab(ScrollablePage):
         self.hours_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="")
 
-        ttk.Label(self.body, text="My Pay", style="Headline.TLabel").grid(row=0, column=0, sticky="w", pady=(4, 16))
+        ttk.Label(self.body, text="My Pay Overview", style="Headline.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(
+            self.body,
+            text="View your payroll summary and recent attendance records used for this pay period.",
+            style="MutedBg.TLabel",
+            wraplength=1100,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 14))
 
         self.info_frame = ttk.LabelFrame(self.body, text="Pay Summary", padding=18)
-        self.info_frame.grid(row=1, column=0, sticky="ew")
+        self.info_frame.grid(row=2, column=0, sticky="ew")
         self.info_frame.columnconfigure(0, weight=1)
         self.info_frame.columnconfigure(1, weight=1)
 
-        make_labeled_entry(self.info_frame, "Period Start", self.start_date_var, 0, 0)
-        make_labeled_entry(self.info_frame, "Period End", self.end_date_var, 0, 1)
+        make_labeled_entry(self.info_frame, "📅 Period Start", self.start_date_var, 0, 0)
+        make_labeled_entry(self.info_frame, "📅 Period End", self.end_date_var, 0, 1)
         ttk.Button(self.info_frame, text="Refresh Pay Summary", style="Primary.TButton", command=self.refresh).grid(
             row=2, column=0, columnspan=2, sticky="ew", pady=(4, 14)
         )
@@ -45,23 +52,23 @@ class PayrollTab(ScrollablePage):
         details.columnconfigure(1, weight=1)
 
         rows = (
-            ("Employee", self.employee_var),
-            ("Pay Type", self.pay_type_var),
-            ("Period", self.period_var),
-            ("Base Pay", self.base_pay_var),
-            ("Overtime Pay", self.overtime_pay_var),
-            ("Estimated Gross", self.gross_pay_var),
-            ("Hours", self.hours_var),
-            ("Status", self.status_var),
+            ("Employee", self.employee_var, "CardTitle.TLabel"),
+            ("Pay Type", self.pay_type_var, "CardTitle.TLabel"),
+            ("Period", self.period_var, "CardTitle.TLabel"),
+            ("Base Pay", self.base_pay_var, "CardTitle.TLabel"),
+            ("Overtime Pay", self.overtime_pay_var, "CardTitle.TLabel"),
+            ("Estimated Gross", self.gross_pay_var, "AccentValue.TLabel"),
+            ("Hours", self.hours_var, "CardTitle.TLabel"),
+            ("Status", self.status_var, "CardTitle.TLabel"),
         )
-        for row_index, (label, variable) in enumerate(rows):
+        for row_index, (label, variable, vstyle) in enumerate(rows):
             ttk.Label(details, text=label, style="CardTitle.TLabel").grid(row=row_index, column=0, sticky="w", pady=4)
-            ttk.Label(details, textvariable=variable, style="Section.TLabel", wraplength=520, justify="right").grid(
+            ttk.Label(details, textvariable=variable, style=vstyle, wraplength=520, justify="right").grid(
                 row=row_index, column=1, sticky="e", pady=4
             )
 
         self.log_frame = ttk.LabelFrame(self.body, text="Recent Attendance Used For Pay", padding=16)
-        self.log_frame.grid(row=2, column=0, sticky="nsew", pady=(16, 0))
+        self.log_frame.grid(row=3, column=0, sticky="nsew", pady=(16, 0))
         self.log_frame.columnconfigure(0, weight=1)
         self.log_frame.rowconfigure(0, weight=1)
 

@@ -6,17 +6,11 @@ from typing import Any, Iterator
 
 from app.config import DATABASE_PATH, STORE_NAME
 from app.db.schema import DEFAULT_CATEGORIES, SCHEMA_SQL
+from app.ui.theme import DEFAULT_THEME_NAME, THEME_OPTIONS
 from app.utils.currency import DEFAULT_CURRENCY_SYMBOL, DEFAULT_USE_DECIMALS
 from app.utils.security import hash_password
 
 
-DEFAULT_THEME = "Yellow & White"
-VALID_THEMES = (
-    "Green & White",
-    "Dark Blue & White",
-    "Yellow & White",
-    "Brown & White",
-)
 
 
 class DatabaseManager:
@@ -67,7 +61,7 @@ class DatabaseManager:
         if "is_active" not in user_columns:
             connection.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
         if "theme_name" not in user_columns:
-            connection.execute(f"ALTER TABLE users ADD COLUMN theme_name TEXT NOT NULL DEFAULT '{DEFAULT_THEME}'")
+            connection.execute(f"ALTER TABLE users ADD COLUMN theme_name TEXT NOT NULL DEFAULT '{DEFAULT_THEME_NAME}'")
         if "employee_id" not in user_columns:
             connection.execute("ALTER TABLE users ADD COLUMN employee_id INTEGER")
 
@@ -80,7 +74,7 @@ class DatabaseManager:
                 ELSE ?
             END
             """,
-            (*VALID_THEMES, DEFAULT_THEME),
+            (*THEME_OPTIONS, DEFAULT_THEME_NAME),
         )
         connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id) WHERE employee_id IS NOT NULL"
@@ -94,8 +88,21 @@ class DatabaseManager:
             connection.execute("ALTER TABLE products ADD COLUMN supplier TEXT")
         if "cost_price" not in product_columns:
             connection.execute("ALTER TABLE products ADD COLUMN cost_price REAL NOT NULL DEFAULT 0")
+        if "measurement_unit" not in product_columns:
+            connection.execute("ALTER TABLE products ADD COLUMN measurement_unit TEXT NOT NULL DEFAULT 'pcs'")
         connection.execute("UPDATE products SET supplier = COALESCE(supplier, '')")
         connection.execute("UPDATE products SET cost_price = COALESCE(cost_price, 0)")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS measurement_units (
+                name TEXT PRIMARY KEY
+            )
+            """
+        )
+        _unit_count = connection.execute("SELECT COUNT(*) FROM measurement_units").fetchone()[0]
+        if _unit_count == 0:
+            for _unit in ("pcs", "kgs", "pkts", "dozens", "cartons", "crates", "lbs"):
+                connection.execute("INSERT OR IGNORE INTO measurement_units (name) VALUES (?)", (_unit,))
 
         sales_columns = {row["name"] for row in connection.execute("PRAGMA table_info(sales)").fetchall()}
         if "cashier_name" not in sales_columns:
@@ -129,7 +136,7 @@ class DatabaseManager:
                 quantity INTEGER NOT NULL,
                 unit_cost REAL NOT NULL,
                 total_cost REAL NOT NULL,
-                payment_type TEXT NOT NULL CHECK(payment_type IN ('cash', 'credit')),
+                payment_type TEXT NOT NULL CHECK(payment_type IN ('cash', 'mobile money', 'bank')),
                 amount_paid REAL NOT NULL DEFAULT 0,
                 notes TEXT,
                 created_by INTEGER,
@@ -139,6 +146,8 @@ class DatabaseManager:
             )
             """
         )
+
+        self._migrate_stock_purchase_payment_types(connection)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS supplier_payments (
@@ -217,6 +226,75 @@ class DatabaseManager:
             "UPDATE sale_items SET cost_total = CASE WHEN cost_total > 0 THEN cost_total ELSE COALESCE(unit_cost, 0) * quantity END"
         )
 
+    def _migrate_stock_purchase_payment_types(self, connection: sqlite3.Connection) -> None:
+        create_sql_row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'stock_purchases'"
+        ).fetchone()
+        if create_sql_row is None:
+            return
+
+        create_sql = (create_sql_row["sql"] or "").lower()
+        if "'credit'" not in create_sql and "mobile money" in create_sql and "'bank'" in create_sql:
+            return
+
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_purchases_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id INTEGER NOT NULL,
+                    supplier_name TEXT NOT NULL,
+                    purchase_date TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    unit_cost REAL NOT NULL,
+                    total_cost REAL NOT NULL,
+                    payment_type TEXT NOT NULL CHECK(payment_type IN ('cash', 'mobile money', 'bank')),
+                    amount_paid REAL NOT NULL DEFAULT 0,
+                    notes TEXT,
+                    created_by INTEGER,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT,
+                    FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+                )
+                """
+            )
+
+            # Convert legacy 'credit' records to 'bank' so old data remains valid under the new payment types.
+            connection.execute(
+                """
+                INSERT INTO stock_purchases_new (
+                    id, product_id, supplier_name, purchase_date, quantity, unit_cost, total_cost,
+                    payment_type, amount_paid, notes, created_by, created_at
+                )
+                SELECT
+                    id,
+                    product_id,
+                    supplier_name,
+                    purchase_date,
+                    quantity,
+                    unit_cost,
+                    total_cost,
+                    CASE
+                        WHEN lower(payment_type) = 'credit' THEN 'bank'
+                        WHEN lower(payment_type) = 'cash' THEN 'cash'
+                        WHEN lower(payment_type) = 'mobile money' THEN 'mobile money'
+                        WHEN lower(payment_type) = 'bank' THEN 'bank'
+                        ELSE 'bank'
+                    END,
+                    amount_paid,
+                    notes,
+                    created_by,
+                    created_at
+                FROM stock_purchases
+                """
+            )
+
+            connection.execute("DROP TABLE stock_purchases")
+            connection.execute("ALTER TABLE stock_purchases_new RENAME TO stock_purchases")
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
     def _seed_defaults(self, connection: sqlite3.Connection) -> None:
         existing_admin = connection.execute(
             "SELECT id FROM users WHERE username = ?",
@@ -228,7 +306,7 @@ class DatabaseManager:
                 INSERT INTO users (username, password_hash, full_name, role, is_active, theme_name)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                ("admin", hash_password("admin123"), "Ssemujju Edris", "Administrator", 1, DEFAULT_THEME),
+                ("admin", hash_password("admin123"), "Ssemujju Edris", "Administrator", 1, DEFAULT_THEME_NAME),
             )
         else:
             connection.execute(
@@ -242,7 +320,7 @@ class DatabaseManager:
                     END
                 WHERE username = 'admin'
                 """,
-                (*VALID_THEMES, DEFAULT_THEME),
+                (*THEME_OPTIONS, DEFAULT_THEME_NAME),
             )
 
         default_settings = (

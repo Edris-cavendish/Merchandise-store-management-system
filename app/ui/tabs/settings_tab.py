@@ -26,7 +26,7 @@ class SettingsTab(ScrollablePage):
         on_profile_updated,
         on_branding_updated,
     ) -> None:
-        super().__init__(parent, padding=6)
+        super().__init__(parent, padding=14)
         self.current_user = current_user
         self.user_service = user_service
         self.employee_service = employee_service
@@ -39,13 +39,21 @@ class SettingsTab(ScrollablePage):
         self.permission_checks: dict[str, ttk.Checkbutton] = {}
 
         self.body.columnconfigure(0, weight=1)
+        self.body.columnconfigure(1, weight=1)
 
         ttk.Label(self.body, text="Settings & Security", style="Headline.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(4, 16)
+            row=0, column=0, sticky="w", pady=(0, 4)
         )
+        ttk.Label(
+            self.body,
+            text="Manage your login details, choose your colour theme, configure store branding, and administer employee accounts and permissions.",
+            style="MutedBg.TLabel",
+            wraplength=1100,
+            justify="left",
+        ).grid(row=0, column=1, sticky="w", padx=(20, 0), pady=(0, 4))
 
         self.top_panel = ttk.Frame(self.body, style="App.TFrame")
-        self.top_panel.grid(row=1, column=0, sticky="ew")
+        self.top_panel.grid(row=1, column=0, columnspan=2, sticky="ew")
         self.top_panel.columnconfigure(0, weight=1)
         self.top_panel.columnconfigure(1, weight=1)
 
@@ -53,6 +61,7 @@ class SettingsTab(ScrollablePage):
         self._build_branding_section()
         if has_permission(self.current_user, "manage_users"):
             self._build_user_admin_section()
+            self._build_measurement_units_section()
 
         self.bind("<Configure>", self._on_resize)
         self.after(50, self._apply_layout)
@@ -207,9 +216,92 @@ class SettingsTab(ScrollablePage):
                 justify="left",
             ).grid(row=9, column=0, sticky="ew")
 
+    def _build_measurement_units_section(self) -> None:
+        self.units_section = ttk.LabelFrame(self.body, text="Measurement Units", padding=18)
+        self.units_section.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(16, 0))
+        self.units_section.columnconfigure(0, weight=1)
+        self.units_section.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            self.units_section,
+            text="Control which measurement units appear in the Inventory product form. Add new units or remove ones you don't use — no code changes needed.",
+            style="Muted.TLabel",
+            wraplength=980,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+
+        list_frame = ttk.Frame(self.units_section, style="Surface.TFrame")
+        list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
+        list_frame.columnconfigure(0, weight=1)
+
+        ttk.Label(list_frame, text="Current Units", style="FormLabel.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
+        self.units_listbox = tk.Listbox(list_frame, height=8, selectmode="single", exportselection=False)
+        self.units_listbox.grid(row=1, column=0, sticky="nsew")
+        units_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.units_listbox.yview)
+        units_scroll.grid(row=1, column=1, sticky="ns")
+        self.units_listbox.configure(yscrollcommand=units_scroll.set)
+
+        add_frame = ttk.Frame(self.units_section, style="Surface.TFrame")
+        add_frame.grid(row=1, column=1, sticky="new")
+        add_frame.columnconfigure(0, weight=1)
+
+        self.new_unit_var = tk.StringVar()
+        ttk.Label(add_frame, text="New Unit Name", style="FormLabel.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
+        ttk.Entry(add_frame, textvariable=self.new_unit_var).grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(
+            add_frame,
+            text="Examples: pcs, kgs, ltrs, bags, bundles",
+            style="Muted.TLabel",
+            wraplength=360,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w", pady=(0, 10))
+        ttk.Button(
+            add_frame, text="Add Unit", style="Primary.TButton", command=self._add_measurement_unit
+        ).grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        ttk.Button(
+            add_frame, text="Remove Selected Unit", style="Secondary.TButton", command=self._remove_measurement_unit
+        ).grid(row=4, column=0, sticky="ew")
+
+    def _refresh_units_listbox(self) -> None:
+        if not hasattr(self, "units_listbox"):
+            return
+        self.units_listbox.delete(0, "end")
+        for unit in self.settings_service.get_measurement_units():
+            self.units_listbox.insert("end", unit)
+
+    def _add_measurement_unit(self) -> None:
+        name = self.new_unit_var.get().strip()
+        if not name:
+            messagebox.showwarning("Missing Unit", "Enter a unit name first.", parent=self)
+            return
+        try:
+            self.settings_service.add_measurement_unit(name)
+            self.new_unit_var.set("")
+            self._refresh_units_listbox()
+        except Exception as exc:
+            messagebox.showerror("Unit Error", str(exc), parent=self)
+
+    def _remove_measurement_unit(self) -> None:
+        selection = self.units_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Select Unit", "Select a unit from the list to remove.", parent=self)
+            return
+        unit = self.units_listbox.get(selection[0])
+        if not messagebox.askyesno("Confirm Remove", f"Remove unit '{unit}'?", parent=self):
+            return
+        try:
+            self.settings_service.remove_measurement_unit(unit)
+            self._refresh_units_listbox()
+        except Exception as exc:
+            messagebox.showerror("Remove Error", str(exc), parent=self)
+
     def _build_user_admin_section(self) -> None:
         self.admin_section = ttk.LabelFrame(self.body, text="User Accounts & Privileges", padding=18)
-        self.admin_section.grid(row=2, column=0, sticky="nsew", pady=(16, 0))
+        self.admin_section.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(16, 0))
         self.admin_section.columnconfigure(0, weight=1)
 
         ttk.Label(
@@ -606,6 +698,7 @@ class SettingsTab(ScrollablePage):
         self._update_currency_preview()
 
         if not hasattr(self, "user_tree"):
+            self._refresh_units_listbox()
             self._sync_scrollregion()
             return
 
@@ -648,5 +741,6 @@ class SettingsTab(ScrollablePage):
         else:
             self._update_permission_controls()
 
+        self._refresh_units_listbox()
         self._sync_scrollregion()
 

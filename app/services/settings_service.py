@@ -58,3 +58,21 @@ class SettingsService:
     def format_money(self, amount: float | int, currency_settings: dict | None = None) -> str:
         settings = currency_settings or self.get_currency_settings()
         return format_money(amount, settings.get("currency_symbol"), settings.get("use_decimals"))
+
+    # ── Measurement units ─────────────────────────────────────────────────────
+
+    def get_measurement_units(self) -> list[str]:
+        rows = self.database.fetch_all("SELECT name FROM measurement_units ORDER BY name")
+        return [row["name"] for row in rows]
+
+    def add_measurement_unit(self, name: str) -> None:
+        name = name.strip().lower()
+        if not name:
+            raise ValueError("Unit name cannot be empty.")
+        existing = {u.lower() for u in self.get_measurement_units()}
+        if name in existing:
+            raise ValueError(f"Unit '{name}' already exists.")
+        self.database.execute("INSERT INTO measurement_units (name) VALUES (?)", (name,))
+
+    def remove_measurement_unit(self, name: str) -> None:
+        self.database.execute("DELETE FROM measurement_units WHERE name = ?", (name,))

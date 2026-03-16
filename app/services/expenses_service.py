@@ -43,6 +43,36 @@ class ExpensesService:
     def delete_expense(self, expense_id: int) -> None:
         self.database.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
 
+    def get_expense(self, expense_id: int) -> dict:
+        row = self.database.fetch_one(
+            "SELECT id, expense_date, category, title, amount, notes, created_at FROM expenses WHERE id = ?",
+            (expense_id,),
+        )
+        if row is None:
+            raise ValueError("Expense record not found.")
+        return dict(row)
+
+    def update_expense(self, expense_id: int, payload: dict, actor_user_id: int | None = None) -> None:
+        expense_date = payload.get("expense_date", "").strip() or date.today().isoformat()
+        category = payload.get("category", "").strip()
+        title = payload.get("title", "").strip()
+        amount = float(payload.get("amount", 0))
+        notes = payload.get("notes", "").strip()
+
+        if not category or not title:
+            raise ValueError("Expense category and title are required.")
+        if amount <= 0:
+            raise ValueError("Expense amount must be greater than zero.")
+
+        self.database.execute(
+            """
+            UPDATE expenses
+            SET expense_date = ?, category = ?, title = ?, amount = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (expense_date, category, title, amount, notes, expense_id),
+        )
+
     def expenses_total(self, start_date: str | None = None, end_date: str | None = None) -> float:
         query = "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses"
         params: list[str] = []

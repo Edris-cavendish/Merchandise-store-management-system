@@ -5,58 +5,153 @@ from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from app.ui.widgets import ScrollablePage, StatCard, make_labeled_entry
+from app.ui.widgets import ScrollablePage, StatCard, make_labeled_entry, apply_treeview_stripes
+from app.utils.pdf_export import export_text_as_pdf
 
 
-class SimpleBarChart(ttk.Frame):
+class AnimatedBarChart(ttk.Frame):
+    """A modern bar chart with gridlines, value labels, and animated bars."""
+
     def __init__(self, parent, title: str) -> None:
         super().__init__(parent, style="Surface.TFrame", padding=14)
         self.columnconfigure(0, weight=1)
-        ttk.Label(self, text=title, style="Section.TLabel").grid(row=0, column=0, sticky="w")
-        self.canvas = tk.Canvas(self, height=260, highlightthickness=0, borderwidth=0)
-        self.canvas.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self.rowconfigure(1, weight=1)
+        ttk.Label(self, text=title, style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self.canvas = tk.Canvas(self, height=240, highlightthickness=0, borderwidth=0)
+        self.canvas.grid(row=1, column=0, sticky="nsew")
         self.palette = None
+        self._items: list[dict] = []
+        self._value_key = "value"
+        self._anim_step = 0
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         self.palette = palette
-        self.canvas.configure(bg=palette["entry"])
+        self.canvas.configure(bg=palette["surface"])
 
     def set_data(self, items: list[dict], value_key: str) -> None:
+        self._items = items
+        self._value_key = value_key
+        self._anim_step = 0
+        self._draw_frame()
+
+    def _draw_frame(self, progress: float = 1.0) -> None:
         self.canvas.delete("all")
-        palette = self.palette or {"entry": "#FFFFFF", "accent": "#2F7D4A", "muted": "#666", "text": "#111"}
-        width = max(self.canvas.winfo_width(), 460)
-        height = max(self.canvas.winfo_height(), 260)
-        self.canvas.configure(scrollregion=(0, 0, width, height))
-        self.canvas.create_rectangle(0, 0, width, height, fill=palette["entry"], outline=palette["entry"])
+        p = self.palette or {
+            "surface": "#FFFFFF", "surface_alt": "#F0F4F8",
+            "accent": "#1D4ED8", "muted": "#666", "text": "#111",
+            "outline": "#E0E6EE",
+        }
+        items = self._items
+        value_key = self._value_key
+
+        w = max(self.canvas.winfo_width(), 460)
+        h = max(self.canvas.winfo_height(), 240)
+        self.canvas.create_rectangle(0, 0, w, h, fill=p["surface"], outline="")
 
         if not items:
-            self.canvas.create_text(width / 2, height / 2, text="No data yet.", fill=palette["muted"], font=("Segoe UI", 11))
+            self.canvas.create_text(w / 2, h / 2, text="No data yet.", fill=p["muted"], font=("Segoe UI", 11))
             return
 
         values = [max(float(item.get(value_key, 0) or 0), 0) for item in items]
         max_value = max(values) or 1
-        chart_height = height - 70
-        chart_width = width - 40
-        bar_width = max(chart_width // max(len(items) * 2, 2), 36)
-        spacing = bar_width
-        start_x = 24
-        baseline = height - 30
 
-        for index, item in enumerate(items):
-            value = values[index]
-            bar_height = (value / max_value) * chart_height
-            x1 = start_x + index * (bar_width + spacing)
-            y1 = baseline - bar_height
-            x2 = x1 + bar_width
-            self.canvas.create_rectangle(x1, y1, x2, baseline, fill=palette["accent"], outline="")
-            self.canvas.create_text((x1 + x2) / 2, y1 - 12, text=f"{value:,.0f}", fill=palette["text"], font=("Segoe UI", 9))
-            label = str(item.get("label", "Item"))[:14]
-            self.canvas.create_text((x1 + x2) / 2, baseline + 14, text=label, fill=palette["muted"], font=("Segoe UI", 9))
+        pad_l, pad_r, pad_top, pad_bot = 44, 16, 24, 36
+        chart_w = w - pad_l - pad_r
+        chart_h = h - pad_top - pad_bot
+        baseline_y = h - pad_bot
+
+        # Gridlines at 0%, 25%, 50%, 75%, 100%
+        for frac in (0.25, 0.5, 0.75, 1.0):
+            gy = baseline_y - frac * chart_h
+            self.canvas.create_line(pad_l, gy, w - pad_r, gy, fill=p["outline"], dash=(4, 4))
+            label_val = max_value * frac
+            self.canvas.create_text(
+                pad_l - 4, gy,
+                text=f"{label_val:,.0f}",
+                anchor="e",
+                fill=p["muted"],
+                font=("Segoe UI", 8),
+            )
+
+        # Baseline
+        self.canvas.create_line(pad_l, baseline_y, w - pad_r, baseline_y, fill=p["outline"])
+
+        n = len(items)
+        max_bar_w = min(chart_w // max(n, 1) - 8, 60)
+        bar_w = max(max_bar_w, 18)
+        total_bars_w = n * bar_w + (n - 1) * max(4, (chart_w - n * bar_w) // max(n - 1, 1))
+        start_x = pad_l + (chart_w - total_bars_w) // 2
+        gap = (chart_w - n * bar_w) // max(n, 1)
+
+        # Accent colour shades
+        accent = p["accent"]
+
+        for i, item in enumerate(items):
+            v = values[i]
+            full_h = (v / max_value) * chart_h
+            bar_h = full_h * progress
+            x1 = start_x + i * (bar_w + gap)
+            x2 = x1 + bar_w
+            y1 = baseline_y - bar_h
+            y2 = baseline_y
+
+            # Gradient simulation: draw several rectangles getting lighter
+            steps = max(int(bar_h / 4), 1)
+            for s in range(steps):
+                alpha = 0.55 + 0.45 * (s / max(steps - 1, 1))
+                shade = _blend_hex(accent, p["surface"], 1 - alpha)
+                seg_y1 = y1 + s * (bar_h / steps)
+                seg_y2 = y1 + (s + 1) * (bar_h / steps)
+                self.canvas.create_rectangle(x1, seg_y1, x2, seg_y2, fill=shade, outline="")
+
+            # Value label at top
+            if progress >= 0.95:
+                self.canvas.create_text(
+                    (x1 + x2) / 2, y1 - 10,
+                    text=f"{v:,.0f}",
+                    fill=p["text"],
+                    font=("Segoe UI Semibold", 9),
+                )
+
+            # X-axis label
+            label = str(item.get("label", f"#{i+1}"))[:12]
+            self.canvas.create_text(
+                (x1 + x2) / 2, baseline_y + 14,
+                text=label,
+                fill=p["muted"],
+                font=("Segoe UI", 8),
+            )
+
+    def animate(self) -> None:
+        """Animate bars growing from 0 to full height over ~400ms."""
+        steps = 20
+        delay = 20  # ms per step
+
+        def _step(i: int) -> None:
+            progress = i / steps
+            self._draw_frame(progress=progress)
+            if i < steps:
+                self.after(delay, lambda: _step(i + 1))
+
+        _step(1)
+
+
+def _blend_hex(hex1: str, hex2: str, t: float) -> str:
+    """Blend two hex colours. t=0 → hex1, t=1 → hex2."""
+    try:
+        r1, g1, b1 = int(hex1[1:3], 16), int(hex1[3:5], 16), int(hex1[5:7], 16)
+        r2, g2, b2 = int(hex2[1:3], 16), int(hex2[3:5], 16), int(hex2[5:7], 16)
+        r = int(r1 + (r2 - r1) * t)
+        g = int(g1 + (g2 - g1) * t)
+        b = int(b1 + (b2 - b1) * t)
+        return f"#{r:02X}{g:02X}{b:02X}"
+    except Exception:
+        return hex1
 
 
 class AnalyticsTab(ScrollablePage):
     def __init__(self, parent, analytics_service, settings_service) -> None:
-        super().__init__(parent, padding=6)
+        super().__init__(parent, padding=14)
         self.analytics_service = analytics_service
         self.settings_service = settings_service
         self.start_date_var = tk.StringVar(value=date.today().replace(day=1).isoformat())
@@ -65,45 +160,49 @@ class AnalyticsTab(ScrollablePage):
         self.body.columnconfigure(0, weight=1)
 
         ttk.Label(self.body, text="Analytics & Reports", style="Headline.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(4, 16)
+            row=0, column=0, sticky="w", pady=(0, 4)
         )
         ttk.Label(
             self.body,
-            text="Track employee performance, product performance, daily profit movement, and export a simple profit report for the selected period.",
-            style="Muted.TLabel",
-            wraplength=980,
+            text="Track employee performance, product revenue, daily profit movement, and export a profit report for any period.",
+            style="MutedBg.TLabel",
+            wraplength=1100,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(0, 12))
+        ).grid(row=1, column=0, sticky="w", pady=(0, 14))
 
+        # ── Stat cards ────────────────────────────────────────────────────────
         self.cards_frame = ttk.Frame(self.body, style="App.TFrame")
         self.cards_frame.grid(row=2, column=0, sticky="ew")
         self.cards = [
             StatCard(self.cards_frame, "Revenue Today", "0", "All sales recorded today"),
-            StatCard(self.cards_frame, "Expenses Today", "0", "All operating expenses recorded today"),
+            StatCard(self.cards_frame, "Expenses Today", "0", "All operating expenses today"),
             StatCard(self.cards_frame, "Net Profit Today", "0", "Revenue minus stock cost and expenses"),
-            StatCard(self.cards_frame, "Supplier Balance", "0", "Outstanding supplier credit still unpaid"),
+            StatCard(self.cards_frame, "Supplier Balance", "0", "Outstanding supplier credit unpaid"),
         ]
 
-        self.filters = ttk.LabelFrame(self.body, text="Report Period", padding=16)
-        self.filters.grid(row=3, column=0, sticky="ew", pady=(16, 0))
+        # ── Report period filter ──────────────────────────────────────────────
+        self.filters = ttk.LabelFrame(self.body, text="📅  Report Period", padding=14)
+        self.filters.grid(row=3, column=0, sticky="ew", pady=(14, 0))
         self.filters.columnconfigure((0, 1, 2), weight=1)
         make_labeled_entry(self.filters, "Start Date", self.start_date_var, 0, 0)
         make_labeled_entry(self.filters, "End Date", self.end_date_var, 0, 1)
         ttk.Button(self.filters, text="Refresh Analytics", style="Primary.TButton", command=self.refresh).grid(
-            row=1, column=2, sticky="ew", padx=(0, 10), pady=(24, 10)
+            row=1, column=2, sticky="ew", padx=(0, 10), pady=(18, 10)
         )
 
+        # ── Charts ────────────────────────────────────────────────────────────
         self.charts_panel = ttk.Frame(self.body, style="App.TFrame")
-        self.charts_panel.grid(row=4, column=0, sticky="nsew", pady=(16, 0))
+        self.charts_panel.grid(row=4, column=0, sticky="nsew", pady=(14, 0))
         self.charts_panel.columnconfigure(0, weight=1)
         self.charts_panel.columnconfigure(1, weight=1)
 
-        self.employee_chart = SimpleBarChart(self.charts_panel, "Employee Performance (Sales Value)")
-        self.product_chart = SimpleBarChart(self.charts_panel, "Product Performance (Revenue)")
-        self.profit_chart = SimpleBarChart(self.charts_panel, "Daily Net Profit (Last 7 Days)")
+        self.employee_chart = AnimatedBarChart(self.charts_panel, "Employee Performance (Sales Value)")
+        self.product_chart = AnimatedBarChart(self.charts_panel, "Product Performance (Revenue)")
+        self.profit_chart = AnimatedBarChart(self.charts_panel, "Daily Net Profit (Last 7 Days)")
 
+        # ── Report preview ────────────────────────────────────────────────────
         self.report_panel = ttk.LabelFrame(self.body, text="Profit Report Preview", padding=16)
-        self.report_panel.grid(row=5, column=0, sticky="nsew", pady=(16, 0))
+        self.report_panel.grid(row=5, column=0, sticky="nsew", pady=(14, 0))
         self.report_panel.columnconfigure(0, weight=1)
         self.report_panel.rowconfigure(1, weight=1)
         actions = ttk.Frame(self.report_panel, style="Surface.TFrame")
@@ -156,7 +255,6 @@ class AnalyticsTab(ScrollablePage):
             self.employee_chart.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
             self.product_chart.grid(row=1, column=0, sticky="nsew", pady=(0, 12))
             self.profit_chart.grid(row=2, column=0, sticky="nsew")
-
         self._sync_scrollregion()
 
     def apply_palette(self, palette: dict[str, str]) -> None:
@@ -166,10 +264,12 @@ class AnalyticsTab(ScrollablePage):
             fg=palette["text"],
             insertbackground=palette["text"],
             selectbackground=palette["accent"],
-            selectforeground="#FFFFFF",
+            selectforeground=palette["hero_text"],
             highlightthickness=0,
             borderwidth=0,
         )
+        for card in self.cards:
+            card.apply_palette(palette)
         for chart in (self.employee_chart, self.product_chart, self.profit_chart):
             chart.apply_palette(palette)
             chart.set_data([], "value")
@@ -179,14 +279,14 @@ class AnalyticsTab(ScrollablePage):
         file_path = filedialog.asksaveasfilename(
             parent=self,
             title="Export Admin Report",
-            defaultextension=".txt",
-            initialfile=f"profit-report-{self.end_date_var.get().strip() or date.today().isoformat()}.txt",
-            filetypes=[("Text File", "*.txt")],
+            defaultextension=".pdf",
+            initialfile=f"profit-report-{self.end_date_var.get().strip() or date.today().isoformat()}.pdf",
+            filetypes=[("PDF File", "*.pdf")],
         )
         if not file_path:
             return
         try:
-            Path(file_path).write_text(report, encoding="utf-8")
+            export_text_as_pdf(report, file_path)
             messagebox.showinfo("Report Saved", f"Report saved to:\n{file_path}", parent=self)
         except Exception as exc:
             messagebox.showerror("Export Error", str(exc), parent=self)
@@ -209,9 +309,17 @@ class AnalyticsTab(ScrollablePage):
         for card, value, detail in zip(self.cards, values, details):
             card.update_content(value, detail)
 
-        self.employee_chart.set_data(self.analytics_service.employee_performance(), "total_amount")
-        self.product_chart.set_data(self.analytics_service.product_performance(), "revenue")
-        self.profit_chart.set_data(self.analytics_service.daily_financials(), "net_profit")
+        emp_data = self.analytics_service.employee_performance()
+        prod_data = self.analytics_service.product_performance()
+        profit_data = self.analytics_service.daily_financials()
+
+        self.employee_chart.set_data(emp_data, "total_amount")
+        self.product_chart.set_data(prod_data, "revenue")
+        self.profit_chart.set_data(profit_data, "net_profit")
+
+        self.after(100, self.employee_chart.animate)
+        self.after(150, self.product_chart.animate)
+        self.after(200, self.profit_chart.animate)
 
         report = self.analytics_service.report_text(self.start_date_var.get().strip(), self.end_date_var.get().strip())
         self.report_text.delete("1.0", tk.END)

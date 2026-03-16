@@ -72,6 +72,11 @@ class UserService:
             "UPDATE users SET theme_name = ? WHERE id = ?",
             (normalized_theme, user_id),
         )
+        # Also save as global last used theme for login screen
+        self.database.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('last_theme', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+            (normalized_theme, normalized_theme),
+        )
         updated = self.get_user(user_id)
         updated.pop("password_hash", None)
         return updated

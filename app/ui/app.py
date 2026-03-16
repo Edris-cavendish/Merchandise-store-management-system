@@ -28,6 +28,13 @@ from app.ui.tabs.staff_tab import StaffTab
 from app.ui.theme import apply_theme
 
 
+def _initials(full_name: str) -> str:
+    parts = full_name.strip().split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]}{parts[-1][0]}".upper()
+    return full_name[:2].upper() if full_name else "??"
+
+
 class SupermarketApp(ttk.Frame):
     def __init__(
         self,
@@ -44,7 +51,7 @@ class SupermarketApp(ttk.Frame):
         self.style = ttk.Style(parent)
         self.palette = apply_theme(self.style, self.current_user.get("theme_name"))
 
-        super().__init__(parent, style="App.TFrame", padding=18)
+        super().__init__(parent, style="App.TFrame", padding=16)
 
         self.dashboard_service = DashboardService(database)
         self.inventory_service = InventoryService(database)
@@ -66,6 +73,7 @@ class SupermarketApp(ttk.Frame):
         self.store_name_var = tk.StringVar(value=self.store_name)
         self.user_header_var = tk.StringVar()
         self.role_badge_var = tk.StringVar()
+        self.avatar_var = tk.StringVar()
 
         self.dashboard_tab = None
         self.inventory_tab = None
@@ -85,6 +93,8 @@ class SupermarketApp(ttk.Frame):
         self._refresh_header_text()
         self._apply_palette_to_tabs()
 
+    # ── Window setup ─────────────────────────────────────────────────────────
+
     def _configure_window(self, parent: tk.Tk) -> None:
         requested_width, requested_height = map(int, WINDOW_SIZE.split("x"))
         screen_width = parent.winfo_screenwidth()
@@ -101,51 +111,115 @@ class SupermarketApp(ttk.Frame):
     def _window_title(self) -> str:
         return f"{self.store_name} | {APP_NAME}"
 
+    # ── Header ────────────────────────────────────────────────────────────────
+
     def _build_header(self) -> None:
+        p = self.palette
         header = ttk.Frame(self, style="Header.TFrame")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         header.columnconfigure(0, weight=3)
         header.columnconfigure(1, weight=2)
 
-        hero = ttk.Frame(header, style="HeroCard.TFrame", padding=22)
+        # ─ Hero card (left) ───────────────────────────────────────────────────
+        hero = tk.Frame(header, background=p["accent"])
         hero.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         hero.columnconfigure(0, weight=1)
 
-        ttk.Label(hero, text="Retail Control Hub", style="HeroPill.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(hero, textvariable=self.store_name_var, style="HeroAccent.TLabel", wraplength=620, justify="left").grid(
-            row=1, column=0, sticky="w", pady=(16, 8)
-        )
-        ttk.Label(hero, text=APP_NAME, style="HeroSub.TLabel", wraplength=620, justify="left").grid(
-            row=2, column=0, sticky="w"
-        )
-        ttk.Label(
+        # Pill badge
+        pill = tk.Label(
             hero,
-            text="Professional attendance, payroll, inventory, billing, reporting, supplier credit, and receipt control in one secure desktop workspace.",
-            style="HeroSub.TLabel",
-            wraplength=620,
-            justify="left",
-        ).grid(row=3, column=0, sticky="w", pady=(10, 0))
+            text="  ● RETAIL CONTROL HUB  ",
+            bg=p["accent_dark"],
+            fg=p["hero_text"],
+            font=("Segoe UI Semibold", 8),
+            padx=8,
+            pady=3,
+        )
+        pill.grid(row=0, column=0, sticky="w", padx=20, pady=(18, 0))
 
-        meta = ttk.Frame(header, style="Surface.TFrame", padding=18)
+        # Store name
+        tk.Label(
+            hero,
+            textvariable=self.store_name_var,
+            bg=p["accent"],
+            fg=p["hero_text"],
+            font=("Bahnschrift SemiBold", 26),
+            justify="left",
+            wraplength=640,
+        ).grid(row=1, column=0, sticky="w", padx=20, pady=(10, 4))
+
+        # App sub-title
+        tk.Label(
+            hero,
+            text=APP_NAME,
+            bg=p["accent"],
+            fg=p["hero_text"],
+            font=("Segoe UI", 10),
+            justify="left",
+            wraplength=640,
+        ).grid(row=2, column=0, sticky="w", padx=20)
+
+        # Description
+        tk.Label(
+            hero,
+            text="Retail operations · inventory · billing · supplier payables · payroll · analytics · reporting",
+            bg=p["accent"],
+            fg=p["hero_text"],
+            font=("Segoe UI", 9),
+            justify="left",
+            wraplength=640,
+        ).grid(row=3, column=0, sticky="w", padx=20, pady=(6, 18))
+
+        # ─ Meta card (right) ─────────────────────────────────────────────────
+        meta = ttk.Frame(header, style="Surface.TFrame", padding=20)
         meta.grid(row=0, column=1, sticky="nsew")
         meta.columnconfigure(0, weight=1)
-        meta.columnconfigure(1, weight=1)
+        meta.columnconfigure(1, weight=0)
 
-        ttk.Label(meta, text="Signed In User", style="HeaderMetaTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(meta, textvariable=self.role_badge_var, style="HeaderMetaTitle.TLabel").grid(row=0, column=1, sticky="e")
-        ttk.Label(meta, textvariable=self.user_header_var, style="HeaderMetaText.TLabel", wraplength=360, justify="left").grid(
-            row=1, column=0, columnspan=2, sticky="ew", pady=(8, 18)
+        # Avatar initials circle
+        self._avatar_label = tk.Label(
+            meta,
+            textvariable=self.avatar_var,
+            bg=p["accent"],
+            fg=p["hero_text"],
+            font=("Bahnschrift SemiBold", 16),
+            width=3,
+            anchor="center",
+            relief="flat",
+        )
+        self._avatar_label.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(10, 0))
+
+        ttk.Label(meta, text="Signed In User", style="FormLabel.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(meta, textvariable=self.role_badge_var, style="FormLabel.TLabel").grid(
+            row=0, column=0, sticky="e", padx=(0, 40)
+        )
+        ttk.Label(
+            meta,
+            textvariable=self.user_header_var,
+            style="HeaderMetaTitle.TLabel",
+            wraplength=320,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 16))
+
+        ttk.Separator(meta, orient="horizontal").grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(0, 14)
         )
 
         button_row = ttk.Frame(meta, style="Surface.TFrame")
-        button_row.grid(row=2, column=0, columnspan=2, sticky="ew")
+        button_row.grid(row=3, column=0, columnspan=2, sticky="ew")
         button_row.columnconfigure((0, 1), weight=1)
-        ttk.Button(button_row, text="Refresh View", style="Secondary.TButton", command=self.refresh_all).grid(
-            row=0, column=0, sticky="ew", padx=(0, 8)
-        )
-        ttk.Button(button_row, text="Log Out", style="Primary.TButton", command=self._logout).grid(
-            row=0, column=1, sticky="ew"
-        )
+        ttk.Button(
+            button_row, text="↻  Refresh", style="Secondary.TButton",
+            command=self.refresh_all,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ttk.Button(
+            button_row, text="Sign Out", style="Danger.TButton",
+            command=self._logout,
+        ).grid(row=0, column=1, sticky="ew")
+
+    # ── Notebook ──────────────────────────────────────────────────────────────
 
     def _build_notebook(self) -> None:
         if self.notebook is not None:
@@ -165,17 +239,17 @@ class SupermarketApp(ttk.Frame):
                 self.settings_service,
                 self.current_user,
             )
-            self.notebook.add(self.dashboard_tab, text="Dashboard")
+            self.notebook.add(self.dashboard_tab, text="  Dashboard  ")
 
         self.inventory_tab = None
         if has_permission(self.current_user, "manage_inventory"):
             self.inventory_tab = InventoryTab(self.notebook, self.inventory_service, self.settings_service)
-            self.notebook.add(self.inventory_tab, text="Inventory")
+            self.notebook.add(self.inventory_tab, text="  Inventory  ")
 
         self.staff_tab = None
         if has_permission(self.current_user, "manage_staff"):
             self.staff_tab = StaffTab(self.notebook, self.employee_service, self.attendance_service, self.settings_service)
-            self.notebook.add(self.staff_tab, text="Staff & Attendance")
+            self.notebook.add(self.staff_tab, text="  Staff & Attendance  ")
 
         self.sales_tab = None
         if has_permission(self.current_user, "process_sales"):
@@ -188,7 +262,7 @@ class SupermarketApp(ttk.Frame):
                 store_name=self.store_name,
                 refresh_callbacks=[self.refresh_all],
             )
-            self.notebook.add(self.sales_tab, text="Sales & Billing")
+            self.notebook.add(self.sales_tab, text="  Sales & Billing  ")
 
         self.receipts_tab = None
         self.my_receipts_tab = None
@@ -204,10 +278,10 @@ class SupermarketApp(ttk.Frame):
                 allow_export=True,
                 title="Receipt Archive",
             )
-            self.notebook.add(self.receipts_tab, text="Receipt Archive")
+            self.notebook.add(self.receipts_tab, text="  Receipt Archive  ")
 
             self.analytics_tab = AnalyticsTab(self.notebook, self.analytics_service, self.settings_service)
-            self.notebook.add(self.analytics_tab, text="Analytics & Reports")
+            self.notebook.add(self.analytics_tab, text="  Analytics & Reports  ")
 
             self.expenses_tab = ExpensesTab(
                 self.notebook,
@@ -216,7 +290,7 @@ class SupermarketApp(ttk.Frame):
                 self.inventory_service,
                 self.settings_service,
             )
-            self.notebook.add(self.expenses_tab, text="Expenses & Suppliers")
+            self.notebook.add(self.expenses_tab, text="  Expenses & Suppliers  ")
         else:
             self.my_receipts_tab = ReceiptsTab(
                 self.notebook,
@@ -227,12 +301,12 @@ class SupermarketApp(ttk.Frame):
                 allow_export=False,
                 title="My Receipts",
             )
-            self.notebook.add(self.my_receipts_tab, text="My Receipts")
+            self.notebook.add(self.my_receipts_tab, text="  My Receipts  ")
 
         self.payroll_tab = None
         if has_permission(self.current_user, "view_payroll"):
             self.payroll_tab = PayrollTab(self.notebook, self.current_user, self.payroll_service, self.settings_service)
-            self.notebook.add(self.payroll_tab, text="My Pay")
+            self.notebook.add(self.payroll_tab, text="  My Pay  ")
 
         self.settings_tab = SettingsTab(
             self.notebook,
@@ -243,7 +317,7 @@ class SupermarketApp(ttk.Frame):
             on_profile_updated=self.handle_profile_update,
             on_branding_updated=self.handle_branding_updated,
         )
-        self.notebook.add(self.settings_tab, text="Settings & Security")
+        self.notebook.add(self.settings_tab, text="  Settings & Security  ")
 
         self.notebook.bind("<<NotebookTabChanged>>", self._handle_tab_change)
         self.refresh_all()
@@ -262,19 +336,31 @@ class SupermarketApp(ttk.Frame):
         else:
             self.notebook.select(self.settings_tab)
 
+    # ── Footer ────────────────────────────────────────────────────────────────
+
     def _build_footer(self) -> None:
         footer = ttk.Frame(self, style="App.TFrame")
-        footer.grid(row=2, column=0, sticky="ew", pady=(14, 0))
-        ttk.Label(footer, text=COPYRIGHT_TEXT, style="Footer.TLabel").pack(side="right")
+        footer.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        footer.columnconfigure(0, weight=1)
+        ttk.Separator(footer, orient="horizontal").grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ttk.Label(footer, text=COPYRIGHT_TEXT, style="Footer.TLabel").grid(row=1, column=0, sticky="e")
+
+    # ── Header text refresh ───────────────────────────────────────────────────
 
     def _refresh_header_text(self) -> None:
-        self.user_header_var.set(f"{self.current_user['full_name']} | Username: {self.current_user['username']}")
+        full_name = self.current_user.get("full_name", "")
+        self.user_header_var.set(f"{full_name}  ·  @{self.current_user['username']}")
         self.role_badge_var.set(f"Role: {self.current_user['role']}")
+        self.avatar_var.set(_initials(full_name))
+
+    # ── Tab change ────────────────────────────────────────────────────────────
 
     def _handle_tab_change(self, _event=None) -> None:
         if self.settings_tab is not None and self.notebook.select() == str(self.settings_tab):
             self.settings_tab.refresh()
         self.refresh_all()
+
+    # ── Palette propagation ───────────────────────────────────────────────────
 
     def _apply_palette_to_tabs(self) -> None:
         for tab in (
@@ -292,10 +378,32 @@ class SupermarketApp(ttk.Frame):
             if tab is not None and hasattr(tab, "apply_palette"):
                 tab.apply_palette(self.palette)
 
+    def _repaint_header(self) -> None:
+        """Repaint all plain tk widgets in the header with the new palette colours."""
+        p = self.palette
+        # Find the header frame (it's a ttk.Frame, so we need to check by style or traverse all)
+        for widget in self.winfo_children():
+            # The header is the first child, a ttk.Frame with Header.TFrame style
+            if isinstance(widget, ttk.Frame):
+                # This is the header - now find and repaint its tk children
+                for child in widget.winfo_children():
+                    if isinstance(child, tk.Frame):
+                        # This is the hero card - repaint it
+                        child.configure(bg=p["accent"])
+                        _repaint_tk_frame(child, p)
+                    elif isinstance(child, ttk.Frame):
+                        # This is the meta card - check for avatar label inside
+                        for meta_child in child.winfo_children():
+                            if isinstance(meta_child, tk.Label) and meta_child.cget("textvariable") == self.avatar_var:
+                                # This is the avatar label
+                                meta_child.configure(bg=p["accent"], fg=p["hero_text"])
+
+    # ── Actions ───────────────────────────────────────────────────────────────
+
     def _logout(self) -> None:
         if not messagebox.askyesno(
-            "Log Out",
-            "Log out of this account and return to the secure login screen?",
+            "Sign Out",
+            "Sign out of this session and return to the secure login screen?",
             parent=self.parent,
         ):
             return
@@ -313,6 +421,7 @@ class SupermarketApp(ttk.Frame):
         self.parent.configure(bg=self.palette["bg"])
         self.configure(style="App.TFrame")
         self._refresh_header_text()
+        self._repaint_header()
 
         permissions_changed = previous_role != self.current_user.get("role") or previous_permissions != set(
             self.current_user.get("permissions", [])
@@ -354,3 +463,21 @@ class SupermarketApp(ttk.Frame):
             self.expenses_tab.refresh()
         if self.payroll_tab is not None:
             self.payroll_tab.refresh()
+
+
+def _repaint_tk_frame(widget: tk.Widget, p: dict) -> None:
+    """Recursively update bg colour on plain tk.Frame / tk.Label widgets in the header."""
+    for child in widget.winfo_children():
+        try:
+            if isinstance(child, (tk.Frame,)):
+                bg = child.cget("bg")
+                # Only repaint accent-coloured frames (hero + avatar)
+                if bg not in ("#FFFFFF", "white", p["bg"], p["surface"]):
+                    child.configure(bg=p["accent"])
+            elif isinstance(child, tk.Label):
+                bg = child.cget("bg")
+                if bg not in ("#FFFFFF", "white", p["bg"], p["surface"]):
+                    child.configure(bg=p["accent"])
+        except tk.TclError:
+            pass
+        _repaint_tk_frame(child, p)

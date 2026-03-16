@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-APP_NAME = "Supermarket Attendance & Management System"
+APP_NAME = "POS System"
 WINDOW_SIZE = "1480x900"
 COPYRIGHT_TEXT = "Developed by Ssemujju Edris | Copyright 2026"
 STORE_NAME = "Edris Supermarket"

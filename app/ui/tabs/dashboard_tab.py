@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from app.services.access_control import has_permission
-from app.ui.widgets import ScrollablePage, StatCard
+from app.ui.widgets import ScrollablePage, StatCard, apply_treeview_stripes, repopulate_with_stripes
 
 
 class DashboardTab(ScrollablePage):
@@ -18,7 +18,7 @@ class DashboardTab(ScrollablePage):
         settings_service,
         current_user: dict,
     ) -> None:
-        super().__init__(parent, padding=6)
+        super().__init__(parent, padding=14)
         self.dashboard_service = dashboard_service
         self.inventory_service = inventory_service
         self.attendance_service = attendance_service
@@ -32,20 +32,24 @@ class DashboardTab(ScrollablePage):
 
         title = "Operations Dashboard" if self.is_admin else "My Work Dashboard"
         subtitle = (
-            "Track the supermarket at a glance with staff, stock, sales, expenses, and performance updates."
+            "Track the supermarket at a glance — staff, stock, sales, expenses, and performance at one view."
             if self.is_admin
             else "See your own sales work, receipt activity, product updates, and your payment snapshot in one place."
         )
 
-        ttk.Label(self.body, text=title, style="Headline.TLabel").grid(row=0, column=0, sticky="w", pady=(4, 8))
+        # ── Page headline ─────────────────────────────────────────────────────
+        ttk.Label(self.body, text=title, style="Headline.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
         ttk.Label(
             self.body,
             text=subtitle,
-            style="Muted.TLabel",
-            wraplength=980,
+            style="MutedBg.TLabel",
+            wraplength=1100,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(0, 16))
+        ).grid(row=1, column=0, sticky="w", pady=(0, 14))
 
+        # ── Stat cards ────────────────────────────────────────────────────────
         self.cards_frame = ttk.Frame(self.body, style="App.TFrame")
         self.cards_frame.grid(row=2, column=0, sticky="ew")
 
@@ -66,6 +70,7 @@ class DashboardTab(ScrollablePage):
                 StatCard(self.cards_frame, "Recent Sales", "0", "Your latest saved sales activity"),
             ]
 
+        # ── Pay snapshot (payroll-enabled users) ──────────────────────────────
         self.personal_pay_frame = None
         if has_permission(self.current_user, "view_payroll"):
             self.personal_pay_frame = ttk.LabelFrame(self.body, text="My Payment Snapshot", padding=16)
@@ -79,10 +84,11 @@ class DashboardTab(ScrollablePage):
                 self.personal_pay_frame,
                 textvariable=self.personal_pay_value_var,
                 style="Muted.TLabel",
-                wraplength=980,
+                wraplength=1100,
                 justify="left",
             ).grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
+        # ── Lower activity section ────────────────────────────────────────────
         self.lower = ttk.Frame(self.body, style="App.TFrame")
         self.lower.grid(row=4, column=0, sticky="nsew", pady=(18, 0))
 
@@ -94,8 +100,11 @@ class DashboardTab(ScrollablePage):
         self.bind("<Configure>", self._on_resize)
         self.after(50, self._apply_layout)
 
+    # ── Admin lower panels ────────────────────────────────────────────────────
+
     def _build_admin_lower(self) -> None:
-        self.low_stock_frame = ttk.LabelFrame(self.lower, text="Low Stock Alerts", padding=16)
+        # Low-stock Treeview
+        self.low_stock_frame = ttk.LabelFrame(self.lower, text="⚠  Low Stock Alerts", padding=14)
         self.low_stock_frame.columnconfigure(0, weight=1)
         self.low_stock_frame.rowconfigure(0, weight=1)
         self.low_stock_tree = ttk.Treeview(
@@ -120,88 +129,131 @@ class DashboardTab(ScrollablePage):
         low_stock_x.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         self.low_stock_tree.configure(yscrollcommand=low_stock_y.set, xscrollcommand=low_stock_x.set)
 
-        self.activity_frame = ttk.LabelFrame(self.lower, text="Recent Activity", padding=16)
+        # Recent activity side panel
+        self.activity_frame = ttk.LabelFrame(self.lower, text="Recent Activity", padding=14)
         self.activity_frame.columnconfigure(0, weight=1)
         self.activity_frame.rowconfigure(1, weight=1)
-        self.activity_frame.rowconfigure(4, weight=1)
+        self.activity_frame.rowconfigure(5, weight=1)
 
-        ttk.Label(self.activity_frame, text="Recent Sales", style="Section.TLabel").grid(row=0, column=0, sticky="w")
-        self.sales_x = ttk.Scrollbar(self.activity_frame, orient="horizontal")
-        self.sales_list = tk.Listbox(
-            self.activity_frame,
-            height=7,
-            relief="flat",
-            font=("Segoe UI", 10),
-            xscrollcommand=self.sales_x.set,
+        ttk.Label(self.activity_frame, text="Recent Sales", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 6)
         )
-        self.sales_x.configure(command=self.sales_list.xview)
-        self.sales_list.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        self.sales_x.grid(row=2, column=0, sticky="ew", pady=(6, 16))
+        self.sales_tree = ttk.Treeview(
+            self.activity_frame,
+            columns=("receipt", "method", "amount", "time"),
+            show="headings",
+            height=7,
+        )
+        for col, title, width in (
+            ("receipt", "Receipt", 130),
+            ("method", "Method", 100),
+            ("amount", "Amount", 110),
+            ("time", "Time", 130),
+        ):
+            self.sales_tree.heading(col, text=title)
+            self.sales_tree.column(col, width=width, anchor="center")
+        self.sales_tree.grid(row=1, column=0, sticky="nsew")
+        s_y = ttk.Scrollbar(self.activity_frame, orient="vertical", command=self.sales_tree.yview)
+        s_y.grid(row=1, column=1, sticky="ns")
+        s_x = ttk.Scrollbar(self.activity_frame, orient="horizontal", command=self.sales_tree.xview)
+        s_x.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        self.sales_tree.configure(yscrollcommand=s_y.set, xscrollcommand=s_x.set)
 
-        ttk.Label(self.activity_frame, text="Recent Attendance", style="Section.TLabel").grid(row=3, column=0, sticky="w")
-        self.attendance_x = ttk.Scrollbar(self.activity_frame, orient="horizontal")
-        self.attendance_list = tk.Listbox(
-            self.activity_frame,
-            height=7,
-            relief="flat",
-            font=("Segoe UI", 10),
-            xscrollcommand=self.attendance_x.set,
+        ttk.Separator(self.activity_frame, orient="horizontal").grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(12, 12)
         )
-        self.attendance_x.configure(command=self.attendance_list.xview)
-        self.attendance_list.grid(row=4, column=0, sticky="nsew", pady=(8, 0))
-        self.attendance_x.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+
+        ttk.Label(self.activity_frame, text="Recent Attendance", style="Section.TLabel").grid(
+            row=4, column=0, sticky="w", pady=(0, 6)
+        )
+        self.attendance_tree = ttk.Treeview(
+            self.activity_frame,
+            columns=("code", "name", "clock_in"),
+            show="headings",
+            height=7,
+        )
+        for col, title, width in (
+            ("code", "Code", 90),
+            ("name", "Name", 170),
+            ("clock_in", "Clock In", 140),
+        ):
+            self.attendance_tree.heading(col, text=title)
+            self.attendance_tree.column(col, width=width, anchor="center")
+        self.attendance_tree.grid(row=5, column=0, sticky="nsew")
+        a_y = ttk.Scrollbar(self.activity_frame, orient="vertical", command=self.attendance_tree.yview)
+        a_y.grid(row=5, column=1, sticky="ns")
+        a_x = ttk.Scrollbar(self.activity_frame, orient="horizontal", command=self.attendance_tree.xview)
+        a_x.grid(row=6, column=0, sticky="ew", pady=(4, 0))
+        self.attendance_tree.configure(yscrollcommand=a_y.set, xscrollcommand=a_x.set)
+
+    # ── Personal lower panels ─────────────────────────────────────────────────
 
     def _build_personal_lower(self) -> None:
-        self.sales_frame = ttk.LabelFrame(self.lower, text="My Recent Sales", padding=16)
+        self.sales_frame = ttk.LabelFrame(self.lower, text="My Recent Sales", padding=14)
         self.sales_frame.columnconfigure(0, weight=1)
         self.sales_frame.rowconfigure(1, weight=1)
         ttk.Label(
+            self.sales_frame, text="Only your own sales activity is shown here.",
+            style="Muted.TLabel", wraplength=460,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self.sales_tree = ttk.Treeview(
             self.sales_frame,
-            text="Only your own sales activity is shown here.",
-            style="Muted.TLabel",
-            wraplength=420,
-            justify="left",
-        ).grid(row=0, column=0, sticky="w")
-        self.sales_x = ttk.Scrollbar(self.sales_frame, orient="horizontal")
-        self.sales_list = tk.Listbox(
-            self.sales_frame,
+            columns=("receipt", "method", "amount", "time"),
+            show="headings",
             height=12,
-            relief="flat",
-            font=("Segoe UI", 10),
-            xscrollcommand=self.sales_x.set,
         )
-        self.sales_x.configure(command=self.sales_list.xview)
-        self.sales_list.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-        self.sales_x.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        for col, title, width in (
+            ("receipt", "Receipt", 160),
+            ("method", "Method", 130),
+            ("amount", "Amount", 140),
+            ("time", "Time", 160),
+        ):
+            self.sales_tree.heading(col, text=title)
+            self.sales_tree.column(col, width=width, anchor="center")
+        self.sales_tree.grid(row=1, column=0, sticky="nsew")
+        s_y = ttk.Scrollbar(self.sales_frame, orient="vertical", command=self.sales_tree.yview)
+        s_y.grid(row=1, column=1, sticky="ns")
+        s_x = ttk.Scrollbar(self.sales_frame, orient="horizontal", command=self.sales_tree.xview)
+        s_x.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        self.sales_tree.configure(yscrollcommand=s_y.set, xscrollcommand=s_x.set)
 
-        self.updates_frame = ttk.LabelFrame(self.lower, text="Product Updates", padding=16)
+        self.updates_frame = ttk.LabelFrame(self.lower, text="Product Updates", padding=14)
         self.updates_frame.columnconfigure(0, weight=1)
         self.updates_frame.rowconfigure(1, weight=1)
         ttk.Label(
             self.updates_frame,
             text="Newly added products are listed here so you can stay updated on what is available to sell.",
-            style="Muted.TLabel",
-            wraplength=420,
-            justify="left",
-        ).grid(row=0, column=0, sticky="w")
-        self.products_x = ttk.Scrollbar(self.updates_frame, orient="horizontal")
-        self.products_list = tk.Listbox(
+            style="Muted.TLabel", wraplength=460,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self.products_tree = ttk.Treeview(
             self.updates_frame,
+            columns=("sku", "name", "supplier", "added"),
+            show="headings",
             height=12,
-            relief="flat",
-            font=("Segoe UI", 10),
-            xscrollcommand=self.products_x.set,
         )
-        self.products_x.configure(command=self.products_list.xview)
-        self.products_list.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-        self.products_x.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        for col, title, width in (
+            ("sku", "SKU", 100),
+            ("name", "Product", 180),
+            ("supplier", "Supplier", 140),
+            ("added", "Added", 130),
+        ):
+            self.products_tree.heading(col, text=title)
+            self.products_tree.column(col, width=width, anchor="center")
+        self.products_tree.grid(row=1, column=0, sticky="nsew")
+        p_y = ttk.Scrollbar(self.updates_frame, orient="vertical", command=self.products_tree.yview)
+        p_y.grid(row=1, column=1, sticky="ns")
+        p_x = ttk.Scrollbar(self.updates_frame, orient="horizontal", command=self.products_tree.xview)
+        p_x.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        self.products_tree.configure(yscrollcommand=p_y.set, xscrollcommand=p_x.set)
+
+    # ── Layout ────────────────────────────────────────────────────────────────
 
     def _on_resize(self, _event=None) -> None:
         self.after_idle(self._apply_layout)
 
     def _apply_layout(self) -> None:
         width = max(self.winfo_width(), self.body.winfo_width(), 1)
-        card_columns = 3 if width >= 1380 else 2 if width >= 820 else 1
+        card_columns = 3 if width >= 1200 else 2 if width >= 760 else 1
 
         for child in self.cards_frame.winfo_children():
             child.grid_forget()
@@ -218,7 +270,7 @@ class DashboardTab(ScrollablePage):
             card.grid(row=row, column=column, sticky="nsew", padx=padx, pady=pady)
 
         if self.personal_pay_frame is not None:
-            self.personal_pay_frame.grid(row=3, column=0, sticky="ew", pady=(16, 0))
+            self.personal_pay_frame.grid(row=3, column=0, sticky="ew", pady=(14, 0))
 
         for child in self.lower.winfo_children():
             child.grid_forget()
@@ -245,22 +297,21 @@ class DashboardTab(ScrollablePage):
 
         self._sync_scrollregion()
 
+    # ── Palette ───────────────────────────────────────────────────────────────
+
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
-        widgets = [self.sales_list]
+        for card in self.cards:
+            card.apply_palette(palette)
+        trees = [self.sales_tree]
         if self.is_admin:
-            widgets.append(self.attendance_list)
+            trees += [self.low_stock_tree, self.attendance_tree]
         else:
-            widgets.append(self.products_list)
-        for widget in widgets:
-            widget.configure(
-                bg=palette["entry"],
-                fg=palette["text"],
-                selectbackground=palette["accent"],
-                selectforeground="#FFFFFF",
-                highlightthickness=0,
-                borderwidth=0,
-            )
+            trees += [self.products_tree]
+        for tree in trees:
+            apply_treeview_stripes(tree, palette)
+
+    # ── Refresh ───────────────────────────────────────────────────────────────
 
     def refresh(self) -> None:
         stats = self.dashboard_service.stats(self.current_user)
@@ -309,10 +360,10 @@ class DashboardTab(ScrollablePage):
                 )
             else:
                 self.personal_pay_title_var.set(
-                    f"{summary['employee']['full_name']} | {summary['period_start']} to {summary['period_end']}"
+                    f"{summary['employee']['full_name']}  ·  {summary['period_start']} to {summary['period_end']}"
                 )
                 self.personal_pay_value_var.set(
-                    " | ".join(
+                    "  |  ".join(
                         [
                             f"Base Pay: {self.settings_service.format_money(summary['base_pay'], currency_settings)}",
                             f"Overtime: {self.settings_service.format_money(summary['overtime_pay'], currency_settings)}",
@@ -322,18 +373,30 @@ class DashboardTab(ScrollablePage):
                     )
                 )
 
-        self.sales_list.delete(0, tk.END)
-        for sale in stats["recent_sales"]:
+        # Recent sales Treeview
+        for item in self.sales_tree.get_children():
+            self.sales_tree.delete(item)
+        for index, sale in enumerate(stats["recent_sales"]):
             amount = self.settings_service.format_money(sale["total_amount"], currency_settings)
-            self.sales_list.insert(
-                tk.END,
-                f"{sale['receipt_no']} | {sale['payment_method']} | {amount} | {sale['created_at'][:16]}",
+            tag = "even" if index % 2 == 0 else "odd"
+            self.sales_tree.insert(
+                "",
+                "end",
+                values=(
+                    sale["receipt_no"],
+                    sale["payment_method"],
+                    amount,
+                    sale["created_at"][:16],
+                ),
+                tags=(tag,),
             )
 
         if self.is_admin:
+            # Low-stock Treeview
             for item in self.low_stock_tree.get_children():
                 self.low_stock_tree.delete(item)
-            for product in self.inventory_service.low_stock_products():
+            for index, product in enumerate(self.inventory_service.low_stock_products()):
+                tag = "even" if index % 2 == 0 else "odd"
                 self.low_stock_tree.insert(
                     "",
                     "end",
@@ -344,19 +407,37 @@ class DashboardTab(ScrollablePage):
                         product["stock_qty"],
                         product["low_stock_threshold"],
                     ),
+                    tags=(tag,),
                 )
 
-            self.attendance_list.delete(0, tk.END)
-            for entry in stats["recent_attendance"]:
-                self.attendance_list.insert(
-                    tk.END,
-                    f"{entry['employee_code']} | {entry['full_name']} | {entry['clock_in'][:16]}",
+            # Attendance Treeview
+            for item in self.attendance_tree.get_children():
+                self.attendance_tree.delete(item)
+            for index, entry in enumerate(stats["recent_attendance"]):
+                tag = "even" if index % 2 == 0 else "odd"
+                self.attendance_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        entry["employee_code"],
+                        entry["full_name"],
+                        entry["clock_in"][:16],
+                    ),
+                    tags=(tag,),
                 )
         else:
-            self.products_list.delete(0, tk.END)
-            for product in stats["product_updates"]:
-                supplier = product.get("supplier") or "No supplier"
-                self.products_list.insert(
-                    tk.END,
-                    f"{product['sku']} | {product['name']} | {supplier} | added {product['created_at'][:16]}",
+            for item in self.products_tree.get_children():
+                self.products_tree.delete(item)
+            for index, product in enumerate(stats["product_updates"]):
+                tag = "even" if index % 2 == 0 else "odd"
+                self.products_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        product["sku"],
+                        product["name"],
+                        product.get("supplier") or "No supplier",
+                        product["created_at"][:16],
+                    ),
+                    tags=(tag,),
                 )
