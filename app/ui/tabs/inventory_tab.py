@@ -152,20 +152,50 @@ class InventoryTab(ScrollablePage):
             justify="left",
         ).grid(row=15, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
-        # ── Quick category add ─────────────────────────────────────────────────
+        # ── Category Management ────────────────────────────────────────────────
         ttk.Separator(self.form_panel, orient="horizontal").grid(row=16, column=0, columnspan=2, sticky="ew", pady=(4, 10))
-        ttk.Label(self.form_panel, text="QUICK CATEGORY", style="Kicker.TLabel").grid(
+        ttk.Label(self.form_panel, text="CATEGORY MANAGEMENT", style="Kicker.TLabel").grid(
             row=17, column=0, columnspan=2, sticky="w", pady=(0, 6)
         )
-        make_labeled_entry(self.form_panel, "New Category Name", self.new_category_var, 18, 0)
-        ttk.Button(self.form_panel, text="Add Category", style="Secondary.TButton", command=self._create_category).grid(
-            row=19, column=1, sticky="ew", pady=(0, 10)
+
+        # Manage existing categories
+        ttk.Label(self.form_panel, text="Select Category to Edit", style="FormLabelBg.TLabel").grid(
+            row=18, column=0, columnspan=2, sticky="w", pady=(0, 3)
+        )
+        self.edit_category_var = tk.StringVar()
+        self.edit_category_box = ttk.Combobox(
+            self.form_panel, textvariable=self.edit_category_var, state="readonly"
+        )
+        self.edit_category_box.grid(row=19, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.edit_category_box.bind("<<ComboboxSelected>>", self._on_edit_category_selected)
+
+        make_labeled_entry(self.form_panel, "Category Name", self.new_category_var, 20, 0)
+        ttk.Label(self.form_panel, text="Description", style="FormLabel.TLabel").grid(
+            row=20, column=1, sticky="w", pady=(0, 3)
+        )
+        self.category_desc_var = tk.StringVar()
+        ttk.Entry(self.form_panel, textvariable=self.category_desc_var, width=18).grid(
+            row=21, column=1, sticky="ew", pady=(0, 10)
+        )
+
+        # Action buttons for category management
+        cat_actions = ttk.Frame(self.form_panel, style="Surface.TFrame")
+        cat_actions.grid(row=22, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        cat_actions.columnconfigure((0, 1, 2), weight=1)
+        ttk.Button(cat_actions, text="Clear Selection", style="Secondary.TButton", command=self._clear_category_selection).grid(
+            row=0, column=0, sticky="ew", padx=(0, 4)
+        )
+        ttk.Button(cat_actions, text="Update", style="Secondary.TButton", command=self._update_category).grid(
+            row=0, column=1, sticky="ew", padx=4
+        )
+        ttk.Button(cat_actions, text="Delete", style="Danger.TButton" if hasattr(self, '_danger_style') else "Secondary.TButton", command=self._delete_category).grid(
+            row=0, column=2, sticky="ew", padx=(4, 0)
         )
 
         # ── Action buttons ─────────────────────────────────────────────────────
-        ttk.Separator(self.form_panel, orient="horizontal").grid(row=20, column=0, columnspan=2, sticky="ew", pady=(4, 10))
+        ttk.Separator(self.form_panel, orient="horizontal").grid(row=23, column=0, columnspan=2, sticky="ew", pady=(4, 10))
         actions = ttk.Frame(self.form_panel, style="Surface.TFrame")
-        actions.grid(row=21, column=0, columnspan=2, sticky="ew")
+        actions.grid(row=24, column=0, columnspan=2, sticky="ew")
         actions.columnconfigure((0, 1, 2), weight=1)
         ttk.Button(actions, text="Clear", style="Secondary.TButton", command=self._reset_form).grid(
             row=0, column=0, sticky="ew", padx=(0, 8)
@@ -221,20 +251,13 @@ class InventoryTab(ScrollablePage):
         self.after_idle(self._apply_layout)
 
     def _apply_layout(self) -> None:
-        width = max(self.winfo_width(), self.body.winfo_width(), 1)
         self.catalog_panel.grid_forget()
         self.form_panel.grid_forget()
 
-        if width >= 1260:
-            self.main_panel.columnconfigure(0, weight=2)
-            self.main_panel.columnconfigure(1, weight=1)
-            self.catalog_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-            self.form_panel.grid(row=0, column=1, sticky="nsew")
-        else:
-            self.main_panel.columnconfigure(0, weight=1)
-            self.main_panel.columnconfigure(1, weight=0)
-            self.catalog_panel.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
-            self.form_panel.grid(row=1, column=0, sticky="nsew")
+        self.main_panel.columnconfigure(0, weight=1)
+        self.main_panel.columnconfigure(1, weight=0)
+        self.catalog_panel.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
+        self.form_panel.grid(row=1, column=0, sticky="nsew")
 
         self._sync_scrollregion()
 
@@ -285,8 +308,9 @@ class InventoryTab(ScrollablePage):
         if not self.sku_var.get().strip() or not self.name_var.get().strip():
             raise ValueError("SKU and product name are required.")
         try:
-            cost_price = float(self.cost_price_var.get())
-            unit_price = float(self.price_var.get())
+            currency_settings = self.settings_service.get_currency_settings()
+            cost_price = self.settings_service.parse_money(self.cost_price_var.get(), currency_settings)
+            unit_price = self.settings_service.parse_money(self.price_var.get(), currency_settings)
             stock_qty = int(self.stock_var.get())
             threshold = int(self.threshold_var.get())
         except ValueError as exc:
@@ -341,10 +365,202 @@ class InventoryTab(ScrollablePage):
         try:
             self.inventory_service.create_category(name)
             self.new_category_var.set("")
+            self._clear_category_selection()
             self.refresh()
-            self.category_var.set(name)
+            messagebox.showinfo("Success", f"Category '{name}' created successfully.", parent=self)
         except Exception as exc:
             messagebox.showerror("Category Error", str(exc), parent=self)
+
+    def _on_edit_category_selected(self, _event=None) -> None:
+        """Load selected category name and description into edit fields."""
+        selected = self.edit_category_var.get()
+        if not selected:
+            return
+        categories = self.inventory_service.list_categories()
+        category = next((c for c in categories if c["name"] == selected), None)
+        if category:
+            self.new_category_var.set(category["name"])
+            self.category_desc_var.set(category.get("description") or "")
+
+    def _update_category(self) -> None:
+        """Update the selected category with new name and description."""
+        selected = self.edit_category_var.get()
+        if not selected:
+            messagebox.showwarning("Select Category", "Select a category to update.", parent=self)
+            return
+        new_name = self.new_category_var.get().strip()
+        if not new_name:
+            messagebox.showwarning("Missing Name", "Enter a category name.", parent=self)
+            return
+        try:
+            categories = self.inventory_service.list_categories()
+            category = next((c for c in categories if c["name"] == selected), None)
+            if not category:
+                raise ValueError("Category not found.")
+            description = self.category_desc_var.get().strip()
+            self.inventory_service.update_category(category["id"], new_name, description)
+            self._clear_category_selection()
+            self.refresh()
+            messagebox.showinfo("Success", f"Category updated to '{new_name}'.", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Update Error", str(exc), parent=self)
+
+    def _delete_category(self) -> None:
+        """Delete the selected category, with option to transfer products if category has items."""
+        selected = self.edit_category_var.get()
+        if not selected:
+            messagebox.showwarning("Select Category", "Select a category to delete.", parent=self)
+            return
+
+        try:
+            categories = self.inventory_service.list_categories()
+            category = next((c for c in categories if c["name"] == selected), None)
+            if not category:
+                raise ValueError("Category not found.")
+
+            # Check if category has products
+            products = self.inventory_service.get_products_by_category(category["id"])
+            
+            if products:
+                # Category has products - show transfer dialog
+                self._show_category_transfer_dialog(category, products)
+            else:
+                # Category is empty - proceed with deletion
+                if not messagebox.askyesno(
+                    "Confirm Delete",
+                    f"Delete the empty category '{selected}'?",
+                    parent=self
+                ):
+                    return
+                self.inventory_service.delete_category(category["id"])
+                self._clear_category_selection()
+                self.refresh()
+                messagebox.showinfo("Success", f"Category '{selected}' deleted.", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Delete Error", str(exc), parent=self)
+
+    def _show_category_transfer_dialog(self, category: dict, products: list[dict]) -> None:
+        """Show dialog with option to transfer products to another category before deletion."""
+        dialog_text = (
+            f"Category '{category['name']}' contains {len(products)} product(s):\n\n"
+            + ", ".join([p["name"] for p in products[:5]])
+            + ("..." if len(products) > 5 else "")
+            + f"\n\nWhat would you like to do?"
+        )
+
+        from tkinter import messagebox as mb
+        result = mb.askyesnocancel(
+            "Category Has Products",
+            dialog_text + "\n\n'Yes' = Transfer products to another category\n'No' = Set products to Uncategorized\n'Cancel' = Keep category",
+            parent=self
+        )
+
+        if result is None:
+            return  # Cancel
+
+        if result:  # Yes - transfer to another category
+            self._show_transfer_target_dialog(category, products)
+        else:  # No - set to uncategorized (NULL)
+            if messagebox.askyesno(
+                "Confirm Set to Uncategorized",
+                f"Set {len(products)} product(s) in '{category['name']}' to Uncategorized?",
+                parent=self
+            ):
+                try:
+                    # Transfer products to NULL category_id
+                    cursor = self.inventory_service.database.execute(
+                        "UPDATE products SET category_id = NULL WHERE category_id = ?",
+                        (category["id"],)
+                    )
+                    self.inventory_service.delete_category(category["id"])
+                    self._clear_category_selection()
+                    self.refresh()
+                    messagebox.showinfo(
+                        "Success",
+                        f"Moved {len(products)} product(s) to Uncategorized and deleted '{category['name']}'.",
+                        parent=self
+                    )
+                except Exception as exc:
+                    messagebox.showerror("Error", f"Failed to uncategorize products: {exc}", parent=self)
+
+    def _show_transfer_target_dialog(self, from_category: dict, products: list[dict]) -> None:
+        """Show dialog to select target category for product transfer."""
+        categories = self.inventory_service.list_categories()
+        # Exclude the current category from options
+        other_categories = [c for c in categories if c["id"] != from_category["id"]]
+
+        if not other_categories:
+            messagebox.showwarning(
+                "No Target Categories",
+                "There are no other categories to transfer products to.",
+                parent=self
+            )
+            return
+
+        # Create a simple selection dialog
+        dialog = tk.Toplevel(self)
+        dialog.title("Select Target Category")
+        dialog.geometry("400x200")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog,
+            text=f"Transfer {len(products)} product(s) from '{from_category['name']}' to:",
+            wraplength=380
+        ).pack(pady=10, padx=10)
+
+        target_var = tk.StringVar()
+        target_box = ttk.Combobox(
+            dialog,
+            textvariable=target_var,
+            values=[c["name"] for c in other_categories],
+            state="readonly",
+            width=40
+        )
+        target_box.pack(pady=10, padx=10)
+
+        def confirm_transfer():
+            target_name = target_var.get()
+            if not target_name:
+                messagebox.showwarning("Select Category", "Select a target category.", parent=dialog)
+                return
+
+            try:
+                target_cat = next((c for c in other_categories if c["name"] == target_name), None)
+                if not target_cat:
+                    raise ValueError("Target category not found.")
+
+                moved_count = self.inventory_service.transfer_products_to_category(
+                    from_category["id"],
+                    target_cat["id"],
+                )
+                # Delete original category
+                self.inventory_service.delete_category(from_category["id"])
+                
+                dialog.destroy()
+                self._clear_category_selection()
+                self.refresh()
+                messagebox.showinfo(
+                    "Success",
+                    f"Transferred {moved_count} product(s) to '{target_name}' with new SKUs and deleted '{from_category['name']}'.",
+                    parent=self
+                )
+            except Exception as exc:
+                messagebox.showerror("Transfer Error", str(exc), parent=dialog)
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=15, padx=10, fill="x")
+        button_frame.columnconfigure((0, 1), weight=1)
+
+        ttk.Button(button_frame, text="Transfer", command=confirm_transfer).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+    def _clear_category_selection(self) -> None:
+        """Clear category selection and edit fields."""
+        self.edit_category_var.set("")
+        self.new_category_var.set("")
+        self.category_desc_var.set("")
 
     def _migrate_skus(self) -> None:
         """Run SKU migration to convert all existing SKUs to new format."""
@@ -383,13 +599,14 @@ class InventoryTab(ScrollablePage):
         if product is None:
             return
         self.selected_product_id = product_id
+        currency_settings = self.settings_service.get_currency_settings()
         self.sku_var.set(product["sku"])
         self.name_var.set(product["name"])
         self.category_var.set(product.get("category_name") or "")
         self._original_category_name = product.get("category_name") or ""
         self.supplier_var.set(product.get("supplier") or "")
-        self.cost_price_var.set(str(product.get("cost_price") or 0))
-        self.price_var.set(str(product["unit_price"]))
+        self.cost_price_var.set(self.settings_service.format_money(product.get("cost_price") or 0, currency_settings))
+        self.price_var.set(self.settings_service.format_money(product.get("unit_price") or 0, currency_settings))
         self.stock_var.set(str(product["stock_qty"]))
         self.threshold_var.set(str(product["low_stock_threshold"]))
         self.description_var.set(product.get("description") or "")
@@ -398,10 +615,11 @@ class InventoryTab(ScrollablePage):
     def _reset_form(self) -> None:
         self.selected_product_id = None
         self._original_category_name = ""
+        currency_settings = self.settings_service.get_currency_settings()
         for variable in (self.sku_var, self.name_var, self.category_var, self.supplier_var, self.description_var):
             variable.set("")
-        self.cost_price_var.set("0")
-        self.price_var.set("0")
+        self.cost_price_var.set(self.settings_service.format_money(0, currency_settings))
+        self.price_var.set(self.settings_service.format_money(0, currency_settings))
         self.stock_var.set("0")
         self.threshold_var.set("5")
         self.unit_var.set("pcs")
@@ -411,12 +629,21 @@ class InventoryTab(ScrollablePage):
     # ── Refresh ───────────────────────────────────────────────────────────────
 
     def refresh(self) -> None:
+        try:
+            self.inventory_service.enforce_category_sku_alignment()
+        except Exception:
+            pass
+
         categories = self.inventory_service.list_categories()
         self.category_lookup = {category["name"]: category["id"] for category in categories}
         self.category_box["values"] = list(self.category_lookup.keys())
+        self.edit_category_box["values"] = list(self.category_lookup.keys())
         units = self.settings_service.get_measurement_units()
         self.unit_box["values"] = units
         if self.unit_var.get() not in units and units:
             self.unit_var.set(units[0])
         self._all_products = self.inventory_service.list_products()
         self._render_tree(self._all_products)
+        # Ensure form defaults match currency settings
+        if self.selected_product_id is None:
+            self._reset_form()

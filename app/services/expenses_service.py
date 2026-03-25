@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from datetime import datetime
 
 from app.db.database import DatabaseManager
 
@@ -21,7 +22,7 @@ class ExpensesService:
         return [dict(row) for row in rows]
 
     def create_expense(self, payload: dict, actor_user_id: int | None = None) -> int:
-        expense_date = payload.get("expense_date", "").strip() or date.today().isoformat()
+        expense_date = self._normalize_expense_date(payload.get("expense_date", "").strip())
         category = payload.get("category", "").strip()
         title = payload.get("title", "").strip()
         amount = float(payload.get("amount", 0))
@@ -53,7 +54,7 @@ class ExpensesService:
         return dict(row)
 
     def update_expense(self, expense_id: int, payload: dict, actor_user_id: int | None = None) -> None:
-        expense_date = payload.get("expense_date", "").strip() or date.today().isoformat()
+        expense_date = self._normalize_expense_date(payload.get("expense_date", "").strip())
         category = payload.get("category", "").strip()
         title = payload.get("title", "").strip()
         amount = float(payload.get("amount", 0))
@@ -78,11 +79,13 @@ class ExpensesService:
         params: list[str] = []
         clauses: list[str] = []
         if start_date:
-            clauses.append("expense_date >= ?")
-            params.append(start_date)
+            normalized_start = self._normalize_expense_date(start_date)
+            clauses.append("date(expense_date, 'localtime') >= date(?, 'localtime')")
+            params.append(normalized_start)
         if end_date:
-            clauses.append("expense_date <= ?")
-            params.append(end_date)
+            normalized_end = self._normalize_expense_date(end_date)
+            clauses.append("date(expense_date, 'localtime') <= date(?, 'localtime')")
+            params.append(normalized_end)
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         row = self.database.fetch_one(query, tuple(params))
@@ -97,3 +100,10 @@ class ExpensesService:
             """
         )
         return round(float(row["total"]) if row else 0, 2)
+
+    def _normalize_expense_date(self, value: str) -> str:
+        cleaned = (value or "").strip() or date.today().isoformat()
+        try:
+            return datetime.strptime(cleaned, "%Y-%m-%d").date().isoformat()
+        except ValueError as exc:
+            raise ValueError("Expense date must be in YYYY-MM-DD format.") from exc

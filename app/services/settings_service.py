@@ -28,6 +28,42 @@ class SettingsService:
             **currency,
         }
 
+    def get_sales_tax_settings(self) -> dict:
+        enabled_row = self.database.fetch_one("SELECT value FROM app_settings WHERE key = ?", ("enable_sales_tax",))
+        rate_row = self.database.fetch_one("SELECT value FROM app_settings WHERE key = ?", ("sales_tax_rate",))
+
+        enabled = str(enabled_row["value"]).strip() in {"1", "true", "True"} if enabled_row else False
+        try:
+            rate = float(rate_row["value"]) if rate_row else 0.16
+        except (TypeError, ValueError):
+            rate = 0.16
+
+        rate = min(max(rate, 0.0), 1.0)
+        return {
+            "enabled": enabled,
+            "rate": rate,
+        }
+
+    def update_sales_tax_settings(self, enabled: bool, rate: float) -> dict:
+        cleaned_rate = min(max(float(rate), 0.0), 1.0)
+        updates = (
+            ("enable_sales_tax", "1" if enabled else "0"),
+            ("sales_tax_rate", f"{cleaned_rate:.4f}"),
+        )
+        for key, value in updates:
+            self.database.execute(
+                """
+                INSERT INTO app_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+        return {
+            "enabled": bool(enabled),
+            "rate": cleaned_rate,
+        }
+
     def update_branding(self, store_name: str, currency_symbol: str, use_decimals: bool) -> dict:
         cleaned_store_name = store_name.strip()
         if not cleaned_store_name:
@@ -58,6 +94,21 @@ class SettingsService:
     def format_money(self, amount: float | int, currency_settings: dict | None = None) -> str:
         settings = currency_settings or self.get_currency_settings()
         return format_money(amount, settings.get("currency_symbol"), settings.get("use_decimals"))
+
+    def parse_money(self, value: str | float | int, currency_settings: dict | None = None) -> float:
+        settings = currency_settings or self.get_currency_settings()
+        symbol = str(settings.get("currency_symbol") or "").strip()
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        text = str(value or "").strip()
+        if symbol:
+            text = text.replace(symbol, "")
+        text = text.replace(",", "").strip()
+        if text == "":
+            return 0.0
+        return float(text)
 
     # ── Measurement units ─────────────────────────────────────────────────────
 

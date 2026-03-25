@@ -174,10 +174,10 @@ class AnalyticsTab(ScrollablePage):
         self.cards_frame = ttk.Frame(self.body, style="App.TFrame")
         self.cards_frame.grid(row=2, column=0, sticky="ew")
         self.cards = [
-            StatCard(self.cards_frame, "Revenue Today", "0", "All sales recorded today"),
-            StatCard(self.cards_frame, "Expenses Today", "0", "All operating expenses today"),
-            StatCard(self.cards_frame, "Net Profit Today", "0", "Revenue minus stock cost and expenses"),
-            StatCard(self.cards_frame, "Supplier Balance", "0", "Outstanding supplier credit unpaid"),
+            StatCard(self.cards_frame, "Gross Receipts Today", "0", "All receipts collected today (incl tax)"),
+            StatCard(self.cards_frame, "Net Sales Today", "0", "Subtotal minus discounts (ex tax)"),
+            StatCard(self.cards_frame, "Tax Collected Today", "0", "Tax portion collected from customers"),
+            StatCard(self.cards_frame, "Operating Profit Today", "0", "Net sales minus COGS and operating expenses"),
         ]
 
         # ── Report period filter ──────────────────────────────────────────────
@@ -198,7 +198,7 @@ class AnalyticsTab(ScrollablePage):
 
         self.employee_chart = AnimatedBarChart(self.charts_panel, "Employee Performance (Sales Value)")
         self.product_chart = AnimatedBarChart(self.charts_panel, "Product Performance (Revenue)")
-        self.profit_chart = AnimatedBarChart(self.charts_panel, "Daily Net Profit (Last 7 Days)")
+        self.profit_chart = AnimatedBarChart(self.charts_panel, "Daily Operating Profit (Last 7 Days)")
 
         # ── Report preview ────────────────────────────────────────────────────
         self.report_panel = ttk.LabelFrame(self.body, text="Profit Report Preview", padding=16)
@@ -295,16 +295,19 @@ class AnalyticsTab(ScrollablePage):
         currency_settings = self.settings_service.get_currency_settings()
         summary = self.analytics_service.summary_cards()
         values = [
-            self.settings_service.format_money(summary["revenue_today"], currency_settings),
-            self.settings_service.format_money(summary["expenses_today"], currency_settings),
-            self.settings_service.format_money(summary["net_profit_today"], currency_settings),
-            self.settings_service.format_money(summary["outstanding_supplier"], currency_settings),
+            self.settings_service.format_money(summary["gross_receipts_today"], currency_settings),
+            self.settings_service.format_money(summary["net_sales_today"], currency_settings),
+            self.settings_service.format_money(summary["tax_collected_today"], currency_settings),
+            self.settings_service.format_money(summary["operating_profit_today"], currency_settings),
         ]
         details = [
-            "All recorded sales value for today",
-            "Utilities, rent, and other expenses for today",
-            "Revenue minus stock cost and expenses",
-            "Unpaid supplier balances still pending",
+            "Sum of total_amount for today",
+            "Sum of subtotal minus discount_amount",
+            "Sum of tax_amount collected today",
+            (
+                f"Gross margin {summary['gross_margin_percent_today']:.2f}% | "
+                f"Operating margin {summary['operating_margin_percent_today']:.2f}%"
+            ),
         ]
         for card, value, detail in zip(self.cards, values, details):
             card.update_content(value, detail)
@@ -315,7 +318,7 @@ class AnalyticsTab(ScrollablePage):
 
         self.employee_chart.set_data(emp_data, "total_amount")
         self.product_chart.set_data(prod_data, "revenue")
-        self.profit_chart.set_data(profit_data, "net_profit")
+        self.profit_chart.set_data(profit_data, "operating_profit")
 
         self.after(100, self.employee_chart.animate)
         self.after(150, self.product_chart.animate)

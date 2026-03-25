@@ -4,7 +4,6 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from app.config import DEFAULT_VAT_RATE
 from app.ui.widgets import ScrollablePage, make_labeled_entry, apply_treeview_stripes
 
 
@@ -30,6 +29,9 @@ class SalesTab(ScrollablePage):
         self.current_receipt: dict | None = None
         self.current_totals = {"subtotal": 0.0, "discount_amount": 0.0, "tax_amount": 0.0, "total": 0.0}
         self.store_name_var = tk.StringVar(value=store_name)
+        tax_settings = self.settings_service.get_sales_tax_settings()
+        self._default_tax_rate = float(tax_settings["rate"])
+        self.tax_enabled_var = tk.BooleanVar(value=bool(tax_settings["enabled"]))
 
         self.body.columnconfigure(0, weight=1)
 
@@ -56,28 +58,37 @@ class SalesTab(ScrollablePage):
         self.catalog_panel.columnconfigure(0, weight=2)
         self.catalog_panel.columnconfigure(1, weight=1)
         self.catalog_panel.columnconfigure(2, weight=0)
-        self.catalog_panel.rowconfigure(2, weight=1)
+        self.catalog_panel.rowconfigure(4, weight=1)
 
         self.product_var = tk.StringVar()
+        self.product_search_var = tk.StringVar()
         self.quantity_var = tk.StringVar(value="1")
         self.discount_var = tk.StringVar(value="0")
-        self.tax_var = tk.StringVar(value=f"{DEFAULT_VAT_RATE:.2f}")
+        self.tax_var = tk.StringVar(value=f"{self._default_tax_rate:.2f}")
         self.payment_var = tk.StringVar(value="Cash")
+        self._all_product_keys: list[str] = []
 
-        ttk.Label(self.catalog_panel, text="Product", style="FormLabel.TLabel").grid(
+        ttk.Label(self.catalog_panel, text="🔍 Search Products", style="FormLabel.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 3)
         )
+        search_entry = ttk.Entry(self.catalog_panel, textvariable=self.product_search_var)
+        search_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(0, 8))
+        self.product_search_var.trace_add("write", self._on_product_search)
+
+        ttk.Label(self.catalog_panel, text="Product", style="FormLabel.TLabel").grid(
+            row=2, column=0, sticky="w", pady=(0, 3)
+        )
         ttk.Label(self.catalog_panel, text="Qty", style="FormLabel.TLabel").grid(
-            row=0, column=1, sticky="w", pady=(0, 3)
+            row=2, column=1, sticky="w", pady=(0, 3)
         )
         self.product_box = ttk.Combobox(self.catalog_panel, textvariable=self.product_var, state="readonly")
-        self.product_box.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(0, 10))
+        self.product_box.grid(row=3, column=0, sticky="ew", padx=(0, 8), pady=(0, 10))
         ttk.Entry(self.catalog_panel, textvariable=self.quantity_var, width=10).grid(
-            row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 10)
+            row=3, column=1, sticky="ew", padx=(0, 8), pady=(0, 10)
         )
         ttk.Button(
             self.catalog_panel, text="  Add to Cart  ", style="Primary.TButton", command=self._add_to_cart
-        ).grid(row=1, column=2, sticky="ew", pady=(0, 10))
+        ).grid(row=3, column=2, sticky="ew", pady=(0, 10))
 
         columns = ("name", "price", "qty", "total")
         self.cart_tree = ttk.Treeview(self.catalog_panel, columns=columns, show="headings", height=14)
@@ -89,15 +100,15 @@ class SalesTab(ScrollablePage):
         ):
             self.cart_tree.heading(key, text=title)
             self.cart_tree.column(key, width=width, anchor="center")
-        self.cart_tree.grid(row=2, column=0, columnspan=3, sticky="nsew")
+        self.cart_tree.grid(row=4, column=0, columnspan=3, sticky="nsew")
         cart_y = ttk.Scrollbar(self.catalog_panel, orient="vertical", command=self.cart_tree.yview)
-        cart_y.grid(row=2, column=3, sticky="ns")
+        cart_y.grid(row=4, column=3, sticky="ns")
         cart_x = ttk.Scrollbar(self.catalog_panel, orient="horizontal", command=self.cart_tree.xview)
-        cart_x.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        cart_x.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         self.cart_tree.configure(yscrollcommand=cart_y.set, xscrollcommand=cart_x.set)
 
         action_row = ttk.Frame(self.catalog_panel, style="Surface.TFrame")
-        action_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        action_row.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(10, 0))
         ttk.Button(action_row, text="Remove Selected", style="Secondary.TButton", command=self._remove_selected).pack(
             side="left", fill="x", expand=True, padx=(0, 8)
         )
@@ -126,7 +137,18 @@ class SalesTab(ScrollablePage):
         form.grid(row=2, column=0, sticky="ew")
         form.columnconfigure((0, 1), weight=1)
         make_labeled_entry(form, "Discount Amount", self.discount_var, 0, 0)
-        make_labeled_entry(form, "Tax Rate (0.00–1.00)", self.tax_var, 0, 1)
+
+        ttk.Label(form, text="Tax Rate (0.00-1.00)", style="FormLabel.TLabel").grid(
+            row=0, column=1, sticky="w", pady=(0, 3)
+        )
+        self.tax_entry = ttk.Entry(form, textvariable=self.tax_var)
+        self.tax_entry.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=(0, 4))
+        ttk.Checkbutton(
+            form,
+            text="Apply Tax",
+            variable=self.tax_enabled_var,
+            command=self._on_tax_toggle,
+        ).grid(row=2, column=1, sticky="w", pady=(0, 8))
 
         ttk.Label(form, text="Payment Method", style="FormLabel.TLabel").grid(
             row=2, column=0, sticky="w", pady=(0, 3)
@@ -189,6 +211,7 @@ class SalesTab(ScrollablePage):
         preview_x.grid(row=9, column=0, sticky="ew", pady=(6, 0))
         self.preview.configure(yscrollcommand=preview_y.set, xscrollcommand=preview_x.set)
         self.checkout_panel.rowconfigure(8, weight=1)
+        self._on_tax_toggle()
 
     # ── Responsive layout ─────────────────────────────────────────────────────
 
@@ -296,9 +319,10 @@ class SalesTab(ScrollablePage):
     def _update_totals(self) -> None:
         try:
             discount = float(self.discount_var.get())
-            tax_rate = float(self.tax_var.get())
+            tax_rate = self._effective_tax_rate()
             self.current_totals = self.sales_service.calculate_totals(self.cart, discount, tax_rate)
             self._update_total_labels(self.current_totals)
+            self.settings_service.update_sales_tax_settings(self.tax_enabled_var.get(), float(self.tax_var.get() or 0))
         except Exception as exc:
             messagebox.showerror("Totals Error", str(exc), parent=self)
 
@@ -326,7 +350,7 @@ class SalesTab(ScrollablePage):
     def _checkout(self) -> None:
         try:
             discount = float(self.discount_var.get())
-            tax_rate = float(self.tax_var.get())
+            tax_rate = self._effective_tax_rate()
             receipt = self.sales_service.create_sale(
                 cashier_id=int(self.current_user["id"]),
                 payment_method=self.payment_var.get(),
@@ -334,6 +358,7 @@ class SalesTab(ScrollablePage):
                 discount=discount,
                 tax_rate=tax_rate,
             )
+            self.settings_service.update_sales_tax_settings(self.tax_enabled_var.get(), float(self.tax_var.get() or 0))
             self.current_receipt = receipt
             self.preview.delete("1.0", tk.END)
             self.preview.insert("1.0", self.sales_service.receipt_preview(receipt))
@@ -347,6 +372,28 @@ class SalesTab(ScrollablePage):
                 callback()
         except Exception as exc:
             messagebox.showerror("Checkout Error", str(exc), parent=self)
+
+    def _on_tax_toggle(self) -> None:
+        enabled = self.tax_enabled_var.get()
+        if enabled:
+            self.tax_entry.configure(state="normal")
+            if not self.tax_var.get().strip() or float(self.tax_var.get() or 0) == 0:
+                self.tax_var.set(f"{self._default_tax_rate:.2f}")
+        else:
+            self.tax_entry.configure(state="disabled")
+        try:
+            self.settings_service.update_sales_tax_settings(enabled, float(self.tax_var.get() or 0))
+        except Exception:
+            pass
+        self._update_totals()
+
+    def _effective_tax_rate(self) -> float:
+        if not self.tax_enabled_var.get():
+            return 0.0
+        tax_rate = float(self.tax_var.get())
+        if tax_rate < 0 or tax_rate > 1:
+            raise ValueError("Tax rate must be between 0.00 and 1.00.")
+        return tax_rate
 
     def _save_receipt(self) -> None:
         if self.current_receipt is None:
@@ -369,6 +416,22 @@ class SalesTab(ScrollablePage):
         except Exception as exc:
             messagebox.showerror("Receipt Error", str(exc), parent=self)
 
+    def _on_product_search(self, *_args) -> None:
+        """Filter product list based on search input."""
+        search_text = self.product_search_var.get().strip().lower()
+        if search_text:
+            filtered = [
+                key for key in self._all_product_keys
+                if search_text in key.lower()
+            ]
+        else:
+            filtered = self._all_product_keys
+        self.product_box["values"] = filtered
+        if filtered and self.product_var.get() not in filtered:
+            self.product_var.set(filtered[0])
+        elif not filtered:
+            self.product_var.set("")
+
     def refresh_products(self) -> None:
         products = self.inventory_service.list_products()
         self.product_lookup = {
@@ -376,7 +439,9 @@ class SalesTab(ScrollablePage):
             for product in products
             if int(product["stock_qty"]) > 0
         }
-        self.product_box["values"] = list(self.product_lookup.keys())
+        self._all_product_keys = list(self.product_lookup.keys())
+        self.product_box["values"] = self._all_product_keys
+        self.product_search_var.set("")  # Clear search when refreshing
         if self.product_lookup and self.product_var.get() not in self.product_lookup:
             self.product_var.set(next(iter(self.product_lookup.keys())))
         elif not self.product_lookup:

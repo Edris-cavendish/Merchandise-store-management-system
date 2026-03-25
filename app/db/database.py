@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from app.config import DATABASE_PATH, STORE_NAME
+from app.config import DATABASE_PATH, STORE_NAME, DEFAULT_VAT_RATE
 from app.db.schema import DEFAULT_CATEGORIES, SCHEMA_SQL
 from app.ui.theme import DEFAULT_THEME_NAME, THEME_OPTIONS
 from app.utils.currency import DEFAULT_CURRENCY_SYMBOL, DEFAULT_USE_DECIMALS
@@ -327,6 +327,8 @@ class DatabaseManager:
             ("store_name", STORE_NAME),
             ("currency_symbol", DEFAULT_CURRENCY_SYMBOL),
             ("use_decimals", "1" if DEFAULT_USE_DECIMALS else "0"),
+            ("enable_sales_tax", "0"),
+            ("sales_tax_rate", f"{DEFAULT_VAT_RATE:.2f}"),
         )
         for key, value in default_settings:
             connection.execute(

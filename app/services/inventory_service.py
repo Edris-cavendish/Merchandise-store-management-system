@@ -19,6 +19,163 @@ class InventoryService:
             (name.strip(), description.strip()),
         )
 
+    def update_category(self, category_id: int, name: str, description: str = "") -> None:
+        self.database.execute(
+            "UPDATE categories SET name = ?, description = ? WHERE id = ?",
+            (name.strip(), description.strip(), category_id),
+        )
+
+    def get_products_by_category(self, category_id: int) -> list[dict]:
+        """Get all products in a specific category."""
+        rows = self.database.fetch_all(
+            "SELECT id, sku, name FROM products WHERE category_id = ? ORDER BY name",
+            (category_id,)
+        )
+        return [dict(row) for row in rows]
+
+    def transfer_products_to_category(self, from_category_id: int, to_category_id: int) -> int:
+        """Transfer products and re-key SKUs to the target category prefix.
+
+        Returns the number of moved products.
+        """
+        if from_category_id == to_category_id:
+            raise ValueError("Source and target categories must be different.")
+
+        with self.database.connect() as connection:
+            source = connection.execute(
+                "SELECT id, name FROM categories WHERE id = ?",
+                (from_category_id,),
+            ).fetchone()
+            target = connection.execute(
+                "SELECT id, name FROM categories WHERE id = ?",
+                (to_category_id,),
+            ).fetchone()
+            if source is None:
+                raise ValueError("Source category not found.")
+            if target is None:
+                raise ValueError("Target category not found.")
+
+            rows = connection.execute(
+                "SELECT id FROM products WHERE category_id = ? ORDER BY id",
+                (from_category_id,),
+            ).fetchall()
+            product_ids = [int(row["id"]) for row in rows]
+            if not product_ids:
+                return 0
+
+            prefix = str(target["name"])[:3].upper()
+            used_rows = connection.execute(
+                "SELECT sku FROM products WHERE sku LIKE ? AND category_id != ?",
+                (f"{prefix}-%", from_category_id),
+            ).fetchall()
+            used_numbers: set[int] = set()
+            for row in used_rows:
+                sku = str(row["sku"] or "")
+                if "-" not in sku:
+                    continue
+                try:
+                    used_numbers.add(int(sku.split("-", 1)[1]))
+                except ValueError:
+                    continue
+
+            next_number = 1
+            for product_id in product_ids:
+                temp_sku = f"__XFER__{product_id}"
+                connection.execute(
+                    "UPDATE products SET sku = ? WHERE id = ?",
+                    (temp_sku, product_id),
+                )
+
+            for product_id in product_ids:
+                while next_number in used_numbers:
+                    next_number += 1
+                new_sku = f"{prefix}-{next_number:03d}"
+                used_numbers.add(next_number)
+                next_number += 1
+                connection.execute(
+                    "UPDATE products SET category_id = ?, sku = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (to_category_id, new_sku, product_id),
+                )
+
+        return len(product_ids)
+
+    def enforce_category_sku_alignment(self) -> list[tuple[str, str, str]]:
+        """Fix products whose SKU prefix no longer matches their current category.
+
+        Returns a list of (product_name, old_sku, new_sku) for changed rows.
+        """
+        changes: list[tuple[str, str, str]] = []
+        with self.database.connect() as connection:
+            category_rows = connection.execute("SELECT id, name FROM categories").fetchall()
+            category_prefix: dict[int, str] = {
+                int(row["id"]): str(row["name"] or "UNC")[:3].upper() for row in category_rows
+            }
+
+            product_rows = connection.execute(
+                """
+                SELECT id, name, sku, category_id
+                FROM products
+                WHERE category_id IS NOT NULL
+                ORDER BY id
+                """
+            ).fetchall()
+
+            by_category: dict[int, list[dict]] = {}
+            for row in product_rows:
+                cat_id = int(row["category_id"])
+                by_category.setdefault(cat_id, []).append(dict(row))
+
+            for cat_id, products in by_category.items():
+                prefix = category_prefix.get(cat_id)
+                if not prefix:
+                    continue
+
+                stable_products: list[dict] = []
+                mismatched_products: list[dict] = []
+                for product in products:
+                    sku = str(product["sku"] or "")
+                    if sku.startswith(f"{prefix}-"):
+                        suffix = sku.split("-", 1)[1] if "-" in sku else ""
+                        if suffix.isdigit():
+                            stable_products.append(product)
+                            continue
+                    mismatched_products.append(product)
+
+                if not mismatched_products:
+                    continue
+
+                used_numbers: set[int] = set()
+                for product in stable_products:
+                    sku = str(product["sku"])
+                    used_numbers.add(int(sku.split("-", 1)[1]))
+
+                for product in mismatched_products:
+                    temp_sku = f"__ALIGN__{int(product['id'])}"
+                    connection.execute(
+                        "UPDATE products SET sku = ? WHERE id = ?",
+                        (temp_sku, int(product["id"])),
+                    )
+
+                next_number = 1
+                for product in mismatched_products:
+                    while next_number in used_numbers:
+                        next_number += 1
+                    new_sku = f"{prefix}-{next_number:03d}"
+                    used_numbers.add(next_number)
+                    next_number += 1
+
+                    old_sku = str(product["sku"] or "")
+                    connection.execute(
+                        "UPDATE products SET sku = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (new_sku, int(product["id"])),
+                    )
+                    changes.append((str(product["name"]), old_sku, new_sku))
+
+        return changes
+
+    def delete_category(self, category_id: int) -> None:
+        self.database.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+
     def list_products(self) -> list[dict]:
         rows = self.database.fetch_all(
             """
@@ -268,6 +425,70 @@ class InventoryService:
             """
         )
         return [dict(row) for row in rows]
+
+    def ensure_supplier_payables_seeded(self) -> int:
+        """Auto-create supplier payable records for inventory items missing them.
+
+        This seeds one payable per product when all of the following are true:
+        - Product has a supplier
+        - Product has stock quantity > 0
+        - Product has no stock_purchases record yet
+
+        Returns number of created payable records.
+        """
+        created = 0
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    p.id,
+                    p.supplier,
+                    p.stock_qty,
+                    p.cost_price,
+                    date(COALESCE(p.created_at, CURRENT_TIMESTAMP), 'localtime') AS seed_date
+                FROM products p
+                WHERE COALESCE(TRIM(p.supplier), '') != ''
+                  AND COALESCE(p.stock_qty, 0) > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM stock_purchases sp WHERE sp.product_id = p.id
+                  )
+                """
+            ).fetchall()
+
+            for row in rows:
+                product_id = int(row["id"])
+                supplier_name = str(row["supplier"]).strip()
+                quantity = int(row["stock_qty"])
+                unit_cost = float(row["cost_price"] or 0)
+                if quantity <= 0 or unit_cost < 0:
+                    continue
+                total_cost = round(quantity * unit_cost, 2)
+                seed_date = str(row["seed_date"] or date.today().isoformat())
+
+                connection.execute(
+                    """
+                    INSERT INTO stock_purchases (
+                        product_id, supplier_name, purchase_date, quantity, unit_cost, total_cost,
+                        payment_type, amount_paid, notes, created_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        product_id,
+                        supplier_name,
+                        seed_date,
+                        quantity,
+                        unit_cost,
+                        total_cost,
+                        "bank",
+                        0,
+                        "Auto-generated from inventory to seed supplier payables",
+                        None,
+                    ),
+                )
+                created += 1
+
+        return created
 
     def get_stock_purchase(self, purchase_id: int) -> dict:
         row = self.database.fetch_one(
